@@ -151,3 +151,17 @@ add_action('wp_enqueue_scripts', function() {
         });
     });');
 });
+
+/**
+ * Remove "-scaled" from image filenames while keeping scaling active
+ */
+add_filter('wp_unique_filename', function ($filename, $ext, $dir) {
+    // Remove '-scaled' from filenames
+    $filename = str_replace('-scaled', '', $filename);
+    return $filename;
+}, 10, 3);
+
+function shortcode_year() {
+    return date('Y');
+}
+add_shortcode('year', 'shortcode_year');
