@@ -24,19 +24,20 @@ function render_page_meta_tags_box($post) {
         $extra_keywords[$i] = get_post_meta($post->ID, "_custom_extra_keyword_$i", true);
     }
 
-    // Content for analysis
     $content = $post->post_content;
+    $content_text = wp_strip_all_tags($content);
 
     wp_nonce_field('save_page_meta_tags', 'page_meta_tags_nonce');
-
     ?>
     <p>
         <label for="custom_meta_title"><strong>Meta Title</strong></label><br>
         <input type="text" id="custom_meta_title" name="custom_meta_title" value="<?php echo esc_attr($meta_title); ?>" style="width:100%;" />
+        <small><?php echo strlen($meta_title); ?> tekens</small>
     </p>
     <p>
         <label for="custom_meta_description"><strong>Meta Description</strong></label><br>
         <textarea id="custom_meta_description" name="custom_meta_description" rows="3" style="width:100%;"><?php echo esc_textarea($meta_description); ?></textarea>
+        <small><?php echo strlen($meta_description); ?> tekens</small>
     </p>
     <p>
         <label for="custom_main_keyword"><strong>Hoofd Keyword</strong></label><br>
@@ -48,12 +49,18 @@ function render_page_meta_tags_box($post) {
             <input type="text" id="custom_extra_keyword_<?php echo $i; ?>" name="custom_extra_keyword_<?php echo $i; ?>" value="<?php echo esc_attr($extra_keywords[$i]); ?>" style="width:100%;" />
         </p>
     <?php endfor; ?>
-    <hr>
-    <h4>SEO Checklist & Score</h4>
-    <ul>
+    <div style="display:flex; gap:40px; align-items:flex-start; justify-content:space-between; margin-top:30px;">
+ 
+
+    <!-- Checklist kolom -->
+    <div style="flex:1;">
+        <h4>📋 SEO Checklist & Score</h4>
+     <ul>
+
+
     <?php
     $score = 0;
-    $max_score = 12; // aantal checks nu uitgebreid
+    $max_score = 20;
 
     // 1. Meta Title lengte
     if (strlen($meta_title) >= 30 && strlen($meta_title) <= 60) {
@@ -283,17 +290,122 @@ function render_page_meta_tags_box($post) {
         echo '<li style="color:red;">❌ Geen Meta Description ingevuld om duplicate te controleren</li>';
     }
 
-    $percentage = round(($score / $max_score) * 100);
-    $color = '#f44336';
-    if ($percentage > 75) $color = '#4caf50';
-    elseif ($percentage > 25) $color = '#ffc107';
-    ?>
-    </ul>
-    <p><strong>SEO Score:</strong> <?php echo $percentage; ?>%</p>
-    <div style="background:#ddd;width:100%;height:20px;">
-        <div style="width:<?php echo $percentage; ?>%;background:<?php echo $color; ?>;height:100%;"></div>
+// 16. Hoofd keyword in Meta Title
+if (!empty($main_kw) && stripos($meta_title, $main_kw) !== false) {
+    echo '<li style="color:green;">✅ Hoofd keyword staat in Meta Title</li>';
+    $score++;
+} else {
+    echo '<li style="color:red;">❌ Hoofd keyword ontbreekt in Meta Title</li>';
+}
+
+// 17. Hoofd keyword in Meta Description
+if (!empty($main_kw) && stripos($meta_description, $main_kw) !== false) {
+    echo '<li style="color:green;">✅ Hoofd keyword staat in Meta Description</li>';
+    $score++;
+} else {
+    echo '<li style="color:red;">❌ Hoofd keyword ontbreekt in Meta Description</li>';
+}
+
+// 18. Hoofd keyword in URL
+$post_url = get_permalink($post);
+if (!empty($main_kw) && stripos($post_url, sanitize_title($main_kw)) !== false) {
+    echo '<li style="color:green;">✅ Hoofd keyword staat in de URL</li>';
+    $score++;
+} else {
+    echo '<li style="color:red;">❌ Hoofd keyword staat niet in de URL</li>';
+}
+
+// 19. Inhoud bevat minstens 300 woorden
+$word_count = str_word_count($content_text);
+if ($word_count >= 300) {
+    echo '<li style="color:green;">✅ Inhoud bevat minstens 300 woorden (' . $word_count . ')</li>';
+    $score++;
+} else {
+    echo '<li style="color:red;">❌ Inhoud bevat slechts ' . $word_count . ' woorden, minimum is 300</li>';
+}
+
+// 20. Uniek hoofd keyword
+if (!empty($main_kw)) {
+    global $wpdb;
+$count_kw = $wpdb->get_var($wpdb->prepare(
+    "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
+     INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+     WHERE pm.meta_key = '_custom_main_keyword' AND LOWER(pm.meta_value) = LOWER(%s) AND p.ID != %d AND p.post_status = 'publish'",
+    $main_kw, $post->ID
+));
+
+    if ($count_kw > 0) {
+        echo '<li style="color:red;">❌ Focus keyword komt ook voor op ' . $count_kw . ' andere pagina(s)</li>';
+    } else {
+        echo '<li style="color:green;">✅ Focus keyword is uniek binnen de site</li>';
+        $score++;
+    }
+} else {
+    echo '<li style="color:red;">❌ Geen hoofd keyword ingevuld om te controleren op duplicaat</li>';
+}
+
+
+
+$percentage = round(($score / $max_score) * 100);
+$color = '#f44336';
+if ($percentage > 75) $color = '#4caf50';
+elseif ($percentage > 25) $color = '#ffc107';
+?>
+</ul>
+
+</div>
+   <!-- Keyword-analyse kolom -->
+    <div style="flex:2;">
+        <h4>🔎 Keyword Sterkte Analyse</h4>
+        <ul>
+        <?php
+        foreach (array_filter(array_merge([$main_kw], $extra_keywords)) as $kw) {
+            $occurrences = substr_count(strtolower($content_text), strtolower($kw));
+            if ($occurrences >= 5) {
+                $color = 'green';
+                $label = 'Sterk';
+            } elseif ($occurrences >= 2) {
+                $color = 'orange';
+                $label = 'Gemiddeld';
+            } else {
+                $color = 'red';
+                $label = 'Zwak';
+            }
+            echo "<li style='color:{$color}; margin-bottom:5px;'>🔍 <strong>" . esc_html($kw) . "</strong>: {$label} ({$occurrences}x)</li>";
+        }
+        ?>
+        </ul>
     </div>
-    <?php
+
+</div> <!-- Sluit flex-container af -->
+
+<style>
+    .seo-score-wrap {
+        margin-top: 30px;
+    }
+    .seo-score-bar {
+        width: 100%;
+        height: 24px;
+        background: #ddd;
+        border-radius: 5px;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+    }
+    .seo-score-bar-inner {
+        height: 100%;
+        transition: width 0.4s ease;
+    }
+</style>
+
+<div class="seo-score-wrap">
+    <p><strong>Totale SEO Score:</strong> <?php echo $percentage; ?>%</p>
+    <div class="seo-score-bar">
+        <div class="seo-score-bar-inner" style="width:<?php echo $percentage; ?>%; background:<?php echo $color; ?>;"></div>
+    </div>
+</div>
+
+<?php
+
 }
 
 add_action('save_post', function($post_id) {
@@ -359,7 +471,7 @@ add_action('manage_posts_custom_column', function($column_name, $post_id) {
 
 function calculate_seo_score_for_post($post_id) {
     $score = 0;
-    $max_score = 12;
+    $max_score = 20;
 
     $meta_title = get_post_meta($post_id, '_custom_meta_title', true);
     $meta_description = get_post_meta($post_id, '_custom_meta_description', true);
