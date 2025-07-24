@@ -1,10 +1,5 @@
 <?php
-/**
- * Plugin Name: Custom Code Features
- * Description: Verbergt conceptpagina’s uit het menu en voegt een 'hoofdpagina'-koppeling toe aan CPT's die invloed heeft op de actieve menuweergave.
- * Version: 1.0
- * Author: Alec Meganck
- */
+
 
 defined('ABSPATH') || exit;
 

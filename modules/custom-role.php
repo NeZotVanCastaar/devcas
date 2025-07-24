@@ -1,10 +1,5 @@
 <?php
-/**
- * Plugin Name: Pagina Editor Rol
- * Description: Voegt een aangepaste rol toe die pagina's, berichten en CPT's kan bewerken in Elementor, inclusief toegang tot media en Elementor inzendingen.
- * Version: 1.0
- * Author: Alec Meganck
- */
+
 
 add_action('init', function () {
     // Voeg rol toe als die nog niet bestaat

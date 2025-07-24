@@ -1,10 +1,5 @@
 <?php
-/**
- * Plugin Name: SEO Noindex Toggle
- * Description: Voeg een optie toe om per pagina of bericht 'noindex' in te schakelen.
- * Author: Alec Meganck
- * Version: 1.0
- */
+
 
 add_action('add_meta_boxes', function() {
     add_meta_box(

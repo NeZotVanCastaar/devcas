@@ -1,10 +1,5 @@
 <?php
-/**
- * Plugin Name: Page Meta Tags Manager & SEO Checker
- * Description: Voeg aangepaste SEO meta title, description en keywords toe aan alle publieke post types. Inclusief uitgebreide SEO checks (keyword gebruik, headers, links, afbeeldingen, duplicate titles).
- * Version: 1.0
- * Author: Alec Meganck
- */
+
 
 add_action('add_meta_boxes', function() {
     $post_types = get_post_types(['public' => true], 'names');

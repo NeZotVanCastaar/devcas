@@ -1,10 +1,4 @@
 <?php
-/**
- * Plugin Name: Bulk Image SEO Editor
- * Description: Quickly edit SEO fields (title and alt text) of images from the media library.
- * Version: 1.0
- * Author: Alec Meganck
- */
 
 defined('ABSPATH') || exit;
 
