@@ -5,7 +5,7 @@
     Plugin URI: https://github.com/NeZotVanCastaar/devcas
     Description: Een verzameling handige SEO-tools, bulk editors en custom functionaliteit.
     Version: 1.0.0
-    Author: Alec Meganck
+    Author: Alec Meganck & Robbe Cooman
     Author URI: https://castaar.com
 */
 
