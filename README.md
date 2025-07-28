@@ -77,20 +77,6 @@ Deze plugin maakt gebruik van [plugin-update-checker](https://github.com/YahnisE
 
 ---
 
-## 💡 Toekomstige ideeën
-
-- Export/Import van SEO metadata
-- Keyword suggesties via AI
-- Integratie met RankMath of Yoast
-
----
-
-## 🧾 Licentie
-
-Deze plugin is private/custom-made en valt onder Castaar's ontwikkellicentie. Contacteer [info@castaar.com](mailto:info@castaar.com) voor hergebruik of samenwerking.
-
----
-
 ## 👋 Contact
 
 - 🌐 [castaar.com](https://castaar.com)
