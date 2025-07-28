@@ -361,23 +361,24 @@ elseif ($percentage > 25) $color = '#ffc107';
         <?php
         foreach (array_filter(array_merge([$main_kw], $extra_keywords)) as $kw) {
             $occurrences = substr_count(strtolower($content_text), strtolower($kw));
-            if ($occurrences >= 5) {
-                $color = 'green';
-                $label = 'Sterk';
-            } elseif ($occurrences >= 2) {
-                $color = 'orange';
-                $label = 'Gemiddeld';
-            } else {
-                $color = 'red';
-                $label = 'Zwak';
-            }
-            echo "<li style='color:{$color}; margin-bottom:5px;'>🔍 <strong>" . esc_html($kw) . "</strong>: {$label} ({$occurrences}x)</li>";
+           if ($occurrences >= 5) {
+    $kw_color = 'green';
+    $label = 'Sterk';
+} elseif ($occurrences >= 2) {
+    $kw_color = 'orange';
+    $label = 'Gemiddeld';
+} else {
+    $kw_color = 'red';
+    $label = 'Zwak';
+}
+echo "<li style='color:{$kw_color}; margin-bottom:5px;'>🔍 <strong>" . esc_html($kw) . "</strong>: {$label} ({$occurrences}x)</li>";
+
         }
         ?>
         </ul>
     </div>
 
-</div> <!-- Sluit flex-container af -->
+</div> 
 
 <style>
     .seo-score-wrap {
@@ -425,22 +426,79 @@ add_action('save_post', function($post_id) {
 });
 
 add_action('wp_head', function() {
-    if (is_singular()) {
-        global $post;
-        $description = get_post_meta($post->ID, '_custom_meta_description', true);
-        $main_kw = get_post_meta($post->ID, '_custom_main_keyword', true);
-        $keywords = [];
+    if (!is_singular()) return;
 
-        if (!empty($main_kw)) $keywords[] = $main_kw;
-        for ($i = 1; $i <= 4; $i++) {
-            $val = get_post_meta($post->ID, "_custom_extra_keyword_$i", true);
-            if (!empty($val)) $keywords[] = $val;
-        }
+    global $post;
 
-        if ($description) echo '<meta name="description" content="' . esc_attr($description) . '">' . "\n";
-        if (!empty($keywords)) echo '<meta name="keywords" content="' . esc_attr(implode(', ', array_unique($keywords))) . '">' . "\n";
+    // 🔹 Meta description
+    $desc = get_post_meta($post->ID, '_custom_meta_description', true);
+    if ($desc) {
+        echo '<meta name="description" content="' . esc_attr(strip_tags($desc)) . '">' . "\n";
     }
+
+    // 🔹 Meta keywords
+    $keywords = [];
+    $main_kw = get_post_meta($post->ID, '_custom_main_keyword', true);
+    if (!empty($main_kw)) $keywords[] = $main_kw;
+    for ($i = 1; $i <= 4; $i++) {
+        $val = get_post_meta($post->ID, "_custom_extra_keyword_$i", true);
+        if (!empty($val)) $keywords[] = $val;
+    }
+    if (!empty($keywords)) {
+        echo '<meta name="keywords" content="' . esc_attr(implode(', ', array_unique($keywords))) . '">' . "\n";
+    }
+
+    // 🔸 Publisher naam & logo ophalen
+    $publisher_name = get_bloginfo('name');
+    $publisher_url  = home_url();
+    $logo_id        = get_theme_mod('custom_logo');
+    $logo_url       = $logo_id ? wp_get_attachment_image_url($logo_id, 'full') : null;
+
+    // 🔸 Fallback logo (indien nodig)
+    if (!$logo_url) {
+        $logo_url = 'https://castaar.com/dev/Castaar.png';
+    }
+
+    // 🔸 Structuurdata opstellen
+    $title     = get_post_meta($post->ID, '_custom_meta_title', true) ?: get_the_title($post);
+    $desc_ld   = $desc ?: wp_trim_words(strip_tags($post->post_content), 25);
+    $author    = get_the_author_meta('display_name', $post->post_author);
+    $published = get_the_date('c', $post);
+    $modified  = get_the_modified_date('c', $post);
+    $url       = get_permalink($post);
+
+    $schema = [
+        "@context" => "https://schema.org",
+        "@type" => "Article",
+        "mainEntityOfPage" => [
+            "@type" => "WebPage",
+            "@id" => $url
+        ],
+        "headline" => $title,
+        "description" => $desc_ld,
+        "author" => [
+            "@type" => "Person",
+            "name" => $author
+        ],
+        "publisher" => [
+            "@type" => "Organization",
+            "name" => $publisher_name,
+            "url"  => $publisher_url,
+            "logo" => [
+                "@type" => "ImageObject",
+                "url" => $logo_url,
+                "width" => 112,
+                "height" => 112
+            ]
+        ],
+        "datePublished" => $published,
+        "dateModified" => $modified
+    ];
+
+    echo '<script type="application/ld+json">' . json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
 });
+
+
 
 add_filter('pre_get_document_title', function($title) {
     if (is_singular()) {
@@ -452,22 +510,54 @@ add_filter('pre_get_document_title', function($title) {
     return $title;
 });
 
-// Score tonen in pagina-overzicht (admin columns)
-add_filter('manage_posts_columns', function($columns) {
-    $columns['seo_score'] = 'SEO Score';
-    return $columns;
-});
 
 add_action('manage_posts_custom_column', function($column_name, $post_id) {
     if ($column_name === 'seo_score') {
         $score = calculate_seo_score_for_post($post_id);
-        $color = '#f44336';
-        if ($score > 75) $color = '#4caf50';
-        elseif ($score > 25) $color = '#ffc107';
-        echo '<div style="background:#ddd;width:100%;height:15px;"><div style="width:' . $score . '%;background:' . $color . ';height:100%;"></div></div>';
-        echo '<small>' . $score . '%</small>';
+        $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
+        $content = get_post_field('post_content', $post_id);
+        $site_url = home_url();
+
+        // kleuren
+        $bg = '#f44336'; // rood
+        if ($score >= 75) $bg = '#4caf50'; // groen
+        elseif ($score >= 25) $bg = '#ffc107'; // geel
+
+        // badge
+        echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:5px;">' . $score . ' / 100</div>';
+
+        // hoofdkeyword
+        if (!empty($main_kw)) {
+            echo '<div style="margin-top:4px;font-size:12px;color:#555;"><strong>Keyword:</strong> ' . esc_html($main_kw) . '</div>';
+        }
+
+        // link-analyse
+        $internal_links = 0;
+        $external_links = 0;
+        $media_links = 0;
+        $total_links = 0;
+
+        preg_match_all('/<a[^>]+href=["\']([^"\']+)["\']/', $content, $matches);
+        if (!empty($matches[1])) {
+            foreach ($matches[1] as $url) {
+                $total_links++;
+                if (strpos($url, $site_url) === 0) {
+                    $internal_links++;
+                } elseif (preg_match('#\.(jpg|jpeg|png|gif|webp|pdf|docx?|mp4|mp3)#i', $url)) {
+                    $media_links++;
+                } elseif (strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
+                    $external_links++;
+                }
+            }
+        }
+
+        echo '<div style="margin-top:4px;font-size:12px;color:#555;">';
+        echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' | 🌐 ' . $external_links . ' | 🖼️ ' . $media_links . ' | 📊 ' . $total_links;
+        echo '</div>';
     }
 }, 10, 2);
+
+
 
 function calculate_seo_score_for_post($post_id) {
     $score = 0;
@@ -480,62 +570,157 @@ function calculate_seo_score_for_post($post_id) {
     for ($i = 1; $i <= 4; $i++) {
         $extra_keywords[$i] = get_post_meta($post_id, "_custom_extra_keyword_$i", true);
     }
-    $post_obj = get_post($post_id);
-    $content = $post_obj ? $post_obj->post_content : '';
 
-    // zelfde checks als in metabox, maar kort gehouden voor performance
+    $post = get_post($post_id);
+    $content = $post ? $post->post_content : '';
+    $content_text = wp_strip_all_tags($content);
+    $site_url = home_url();
 
+    // 1. Meta Title lengte
     if (strlen($meta_title) >= 30 && strlen($meta_title) <= 60) $score++;
+
+    // 2. Meta Description lengte
     if (strlen($meta_description) >= 70 && strlen($meta_description) <= 160) $score++;
+
+    // 3. Hoofd keyword ingevuld
     if (!empty($main_kw)) $score++;
+
+    // 4. Minstens 2 extra keywords ingevuld
     if (count(array_filter($extra_keywords)) >= 2) $score++;
 
+    // 5. Keyword density
     if (!empty($main_kw)) {
-        $content_text = wp_strip_all_tags($content);
         $words = str_word_count(strtolower($content_text));
         $keyword_count = substr_count(strtolower($content_text), strtolower($main_kw));
         $density = $words > 0 ? ($keyword_count / $words) * 100 : 0;
         if ($density >= 0.5 && $density <= 3) $score++;
+    }
+
+    // 6. Keyword in eerste 10% content
+    if (!empty($main_kw)) {
         $first_10_percent_length = intval(strlen($content_text) * 0.1);
         $first_10_percent = substr($content_text, 0, $first_10_percent_length);
         if (stripos($first_10_percent, $main_kw) !== false) $score++;
+    }
 
+    // 7. Keyword in H1 tag
+    if (!empty($main_kw)) {
         preg_match_all('/<h1[^>]*>(.*?)<\/h1>/i', $content, $matches);
-        if (!empty($matches[1])) {
-            foreach ($matches[1] as $h1) {
-                if (stripos($h1, $main_kw) !== false) {
-                    $score++;
-                    break;
-                }
-            }
-        }
-
-        preg_match_all('/<(h2|h3)[^>]*>(.*?)<\/\1>/i', $content, $matches);
-        if (!empty($matches[2])) {
-            foreach ($matches[2] as $header) {
-                if (stripos($header, $main_kw) !== false) {
-                    $score++;
-                    break;
-                }
+        foreach ($matches[1] as $h1) {
+            if (stripos($h1, $main_kw) !== false) {
+                $score++;
+                break;
             }
         }
     }
 
+    // 8. Keyword in H2 of H3 tags
+    if (!empty($main_kw)) {
+        preg_match_all('/<(h2|h3)[^>]*>(.*?)<\/\1>/i', $content, $matches);
+        foreach ($matches[2] as $header) {
+            if (stripos($header, $main_kw) !== false) {
+                $score++;
+                break;
+            }
+        }
+    }
+
+    // 9. Content bevat lijst
     if (preg_match('/<(ul|ol)[^>]*>/', $content)) $score++;
 
+    // 10. Gemiddelde paragraaflengte
     preg_match_all('/<p[^>]*>(.*?)<\/p>/i', $content, $matches);
     $par_lengths = [];
-    if (!empty($matches[1])) {
-        foreach ($matches[1] as $para) {
-            $text = wp_strip_all_tags($para);
-            $par_lengths[] = str_word_count($text);
-        }
+    foreach ($matches[1] as $para) {
+        $par_lengths[] = str_word_count(wp_strip_all_tags($para));
+    }
+    if ($par_lengths) {
         $avg_par_length = array_sum($par_lengths) / count($par_lengths);
         if ($avg_par_length <= 150) $score++;
     }
 
+    // 11. Interne link
+    preg_match_all('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>/i', $content, $links);
+    foreach ($links[1] as $link) {
+        if (strpos($link, $site_url) === 0) {
+            $score++;
+            break;
+        }
+    }
+
+    // 12. Externe link
+    foreach ($links[1] as $link) {
+        if (strpos($link, $site_url) !== 0 && preg_match('#^https?://#', $link)) {
+            $score++;
+            break;
+        }
+    }
+
+    // 13. Afbeeldingen met alt en keyword
+    preg_match_all('/<img[^>]+>/i', $content, $images);
+    if (!empty($images[0])) {
+        $score++;
+        foreach ($images[0] as $img_tag) {
+            preg_match('/alt=["\']([^"\']*)["\']/', $img_tag, $alt_match);
+            if (!empty($alt_match[1]) && stripos($alt_match[1], $main_kw) !== false) {
+                $score++;
+                break;
+            }
+        }
+    }
+
+    // 14. Duplicate meta title
+    if (!empty($meta_title)) {
+        global $wpdb;
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+            WHERE pm.meta_key = '_custom_meta_title' AND pm.meta_value = %s AND p.ID != %d AND p.post_status = 'publish'",
+            $meta_title, $post_id
+        ));
+        if ($count == 0) $score++;
+    }
+
+    // 15. Duplicate meta description
+    if (!empty($meta_description)) {
+        global $wpdb;
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+            WHERE pm.meta_key = '_custom_meta_description' AND pm.meta_value = %s AND p.ID != %d AND p.post_status = 'publish'",
+            $meta_description, $post_id
+        ));
+        if ($count == 0) $score++;
+    }
+
+    // 16. Keyword in meta title
+    if (!empty($main_kw) && stripos($meta_title, $main_kw) !== false) $score++;
+
+    // 17. Keyword in meta description
+    if (!empty($main_kw) && stripos($meta_description, $main_kw) !== false) $score++;
+
+    // 18. Keyword in URL
+    $url = get_permalink($post_id);
+    if (!empty($main_kw) && stripos($url, sanitize_title($main_kw)) !== false) $score++;
+
+    // 19. Minstens 300 woorden content
+    if (str_word_count($content_text) >= 300) $score++;
+
+    // 20. Uniek hoofd keyword
+    if (!empty($main_kw)) {
+        global $wpdb;
+        $count_kw = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = '_custom_main_keyword' AND LOWER(pm.meta_value) = LOWER(%s) AND p.ID != %d AND p.post_status = 'publish'",
+            $main_kw, $post_id
+        ));
+        if ($count_kw == 0) $score++;
+    }
+
     return round(($score / $max_score) * 100);
 }
+
 
 add_action('admin_init', function() {
     $post_types = get_post_types(['public' => true], 'names');
@@ -545,15 +730,47 @@ add_action('admin_init', function() {
             return $columns;
         });
 
-        add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
-            if ($column_name === 'seo_score') {
-                $score = calculate_seo_score_for_post($post_id);
-                $color = '#f44336';
-                if ($score > 75) $color = '#4caf50';
-                elseif ($score > 25) $color = '#ffc107';
-                echo '<div style="background:#ddd;width:100%;height:15px;"><div style="width:' . $score . '%;background:' . $color . ';height:100%;"></div></div>';
-                echo '<small>' . $score . '%</small>';
+       add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
+    if ($column_name === 'seo_score') {
+        $score = calculate_seo_score_for_post($post_id);
+        $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
+        $content = get_post_field('post_content', $post_id);
+        $site_url = home_url();
+
+        // kleur bepalen
+        $bg = '#f44336'; // rood
+        if ($score >= 75) $bg = '#4caf50'; // groen
+        elseif ($score >= 25) $bg = '#ffc107'; // geel
+
+        // score badge
+        echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:4px;">' . $score . ' / 100</div>';
+
+        // hoofdkeyword tonen
+        if (!empty($main_kw)) {
+            echo '<div style="margin-top:3px;font-size:11px;color:#555;"><strong>Keyword:</strong> ' . esc_html($main_kw) . '</div>';
+        }
+
+        // interne en externe links tellen
+        $internal_links = 0;
+        $external_links = 0;
+
+        preg_match_all('/<a[^>]+href=["\']([^"\']+)["\']/', $content, $matches);
+        if (!empty($matches[1])) {
+            foreach ($matches[1] as $url) {
+                if (strpos($url, $site_url) === 0) {
+                    $internal_links++;
+                } elseif (strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
+                    $external_links++;
+                }
             }
-        }, 10, 2);
+        }
+
+        // tonen
+        echo '<div style="margin-top:3px;font-size:11px;color:#555;">';
+        echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' intern | 🌐 ' . $external_links . ' extern';
+        echo '</div>';
+    }
+}, 10, 2);
+
     }
 });
