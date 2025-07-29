@@ -29,3 +29,4 @@ $updateChecker->setBranch('main');
 foreach (glob(plugin_dir_path(__FILE__) . 'modules/*.php') as $module) {
     include_once $module;
 }
+

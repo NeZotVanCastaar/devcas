@@ -511,52 +511,6 @@ add_filter('pre_get_document_title', function($title) {
 });
 
 
-add_action('manage_posts_custom_column', function($column_name, $post_id) {
-    if ($column_name === 'seo_score') {
-        $score = calculate_seo_score_for_post($post_id);
-        $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
-        $content = get_post_field('post_content', $post_id);
-        $site_url = home_url();
-
-        // kleuren
-        $bg = '#f44336'; // rood
-        if ($score >= 75) $bg = '#4caf50'; // groen
-        elseif ($score >= 25) $bg = '#ffc107'; // geel
-
-        // badge
-        echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:5px;">' . $score . ' / 100</div>';
-
-        // hoofdkeyword
-        if (!empty($main_kw)) {
-            echo '<div style="margin-top:4px;font-size:12px;color:#555;"><strong>Keyword:</strong> ' . esc_html($main_kw) . '</div>';
-        }
-
-        // link-analyse
-        $internal_links = 0;
-        $external_links = 0;
-        $media_links = 0;
-        $total_links = 0;
-
-        preg_match_all('/<a[^>]+href=["\']([^"\']+)["\']/', $content, $matches);
-        if (!empty($matches[1])) {
-            foreach ($matches[1] as $url) {
-                $total_links++;
-                if (strpos($url, $site_url) === 0) {
-                    $internal_links++;
-                } elseif (preg_match('#\.(jpg|jpeg|png|gif|webp|pdf|docx?|mp4|mp3)#i', $url)) {
-                    $media_links++;
-                } elseif (strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
-                    $external_links++;
-                }
-            }
-        }
-
-        echo '<div style="margin-top:4px;font-size:12px;color:#555;">';
-        echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' | 🌐 ' . $external_links . ' | 🖼️ ' . $media_links . ' | 📊 ' . $total_links;
-        echo '</div>';
-    }
-}, 10, 2);
-
 
 
 function calculate_seo_score_for_post($post_id) {
