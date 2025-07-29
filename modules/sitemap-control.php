@@ -55,3 +55,13 @@ add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
     $allowed = get_option('custom_sitemap_enabled_taxonomies', []);
     return array_intersect_key($taxonomies, array_flip($allowed));
 });
+
+add_filter('wp_sitemaps_post_types', function ($post_types) {
+    $allowed = get_option('custom_sitemap_enabled_post_types', []);
+    return empty($allowed) ? $post_types : array_intersect_key($post_types, array_flip($allowed));
+});
+
+add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
+    $allowed = get_option('custom_sitemap_enabled_taxonomies', []);
+    return empty($allowed) ? $taxonomies : array_intersect_key($taxonomies, array_flip($allowed));
+});
