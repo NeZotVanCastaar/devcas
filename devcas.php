@@ -3,7 +3,7 @@
     Plugin Name: DevCas
     Plugin URI: https://github.com/NeZotVanCastaar/devcas
     Description: Een verzameling handige SEO-tools, bulk editors en custom functionaliteit.
-    Version: 1.0.1
+    Version: 1.0.2
     Author: Castaar – Alec Meganck & Robbe Cooman
     Author URI: https://castaar.com
 */
