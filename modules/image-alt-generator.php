@@ -27,7 +27,7 @@ function castaar_generate_clean_alt($filename) {
     // Verwijder dubbele spaties
     $name = preg_replace('/\s+/', ' ', trim($name));
 
-    return ucwords(strtolower($name));
+    return strtolower($name);
 }
 
 
