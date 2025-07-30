@@ -160,3 +160,15 @@ function shortcode_year() {
     return date('Y');
 }
 add_shortcode('year', 'shortcode_year');
+
+function show_only_published_everywhere_in_admin($query) {
+    if (
+      is_admin() &&
+      $query->is_main_query() &&
+      !isset($_GET['post_status']) &&
+      $query->get('post_type')
+    ) {
+      $query->set('post_status', 'publish');
+    }
+  }
+  add_action('pre_get_posts', 'show_only_published_everywhere_in_admin');
