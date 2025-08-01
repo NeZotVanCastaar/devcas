@@ -1,5 +1,6 @@
 <?php
 
+
 if (!defined('ABSPATH')) exit;
 
 // ───── CPT ─────
@@ -87,6 +88,7 @@ function mhsm_render_code_boxes($post) {
     foreach ($positions as $key => $label) {
         $code = get_post_meta($post->ID, "_mhsm_code_{$key}", true);
         $type = get_post_meta($post->ID, "_mhsm_type_{$key}", true) ?: 'html';
+        $condition = get_post_meta($post->ID, "_mhsm_condition_{$key}", true);
         $placeholder = $placeholders[$type] ?? '';
 
         echo "<h4>{$label} code</h4>";
@@ -96,6 +98,9 @@ function mhsm_render_code_boxes($post) {
         }
         echo "</select></p>";
         echo "<textarea name='mhsm_code_{$key}' id='mhsm_code_{$key}' style='width:100%;height:150px;' placeholder='" . esc_attr($placeholder) . "'>" . esc_textarea($code) . "</textarea>";
+
+        echo "<p><label>Conditie (optioneel):</label><br>";
+        echo "<textarea name='mhsm_condition_{$key}' placeholder='Bijv: is_front_page() || is_page(42)' style='width:100%;height:60px;'>" . esc_textarea($condition) . "</textarea></p>";
     }
 }
 
@@ -112,6 +117,7 @@ function mhsm_save_snippet_meta($post_id) {
     foreach ($positions as $pos) {
         update_post_meta($post_id, "_mhsm_code_{$pos}", wp_unslash($_POST["mhsm_code_{$pos}"] ?? ''));
         update_post_meta($post_id, "_mhsm_type_{$pos}", sanitize_text_field($_POST["mhsm_type_{$pos}"] ?? 'html'));
+        update_post_meta($post_id, "_mhsm_condition_{$pos}", wp_unslash($_POST["mhsm_condition_{$pos}"] ?? ''));
     }
     update_post_meta($post_id, '_mhsm_active', isset($_POST['mhsm_active']) ? '1' : '0');
 }
@@ -129,8 +135,18 @@ function mhsm_output_snippets($position = 'header') {
     foreach ($snippets as $snippet) {
         $code = get_post_meta($snippet->ID, "_mhsm_code_{$position}", true);
         $type = get_post_meta($snippet->ID, "_mhsm_type_{$position}", true);
+        $condition = get_post_meta($snippet->ID, "_mhsm_condition_{$position}", true);
 
         if (empty($code)) continue;
+
+        if (!empty($condition)) {
+            try {
+                if (!eval("return ({$condition});")) continue;
+            } catch (Throwable $e) {
+                error_log("[MHSM] Fout in conditie van snippet #{$snippet->ID} ({$position}): " . $e->getMessage());
+                continue;
+            }
+        }
 
         echo "\n<!-- Snippet #{$snippet->ID} ({$type} in {$position}) -->\n";
         switch ($type) {
