@@ -97,12 +97,60 @@ function mhsm_render_code_boxes($post) {
             echo "<option value='{$val}'" . selected($type, $val, false) . ">{$labelType}</option>";
         }
         echo "</select></p>";
+
         echo "<textarea name='mhsm_code_{$key}' id='mhsm_code_{$key}' style='width:100%;height:150px;' placeholder='" . esc_attr($placeholder) . "'>" . esc_textarea($code) . "</textarea>";
 
+        // Conditieveld met autocomplete
         echo "<p><label>Conditie (optioneel):</label><br>";
-        echo "<textarea name='mhsm_condition_{$key}' placeholder='Bijv: is_front_page() || is_page(42)' style='width:100%;height:60px;'>" . esc_textarea($condition) . "</textarea></p>";
+        echo "<input type='text' class='mhsm-condition-field' name='mhsm_condition_{$key}' id='mhsm_condition_{$key}' 
+            value='" . esc_attr($condition) . "' 
+            placeholder='Bijv: get_the_title() === \"Contact\"' 
+            style='width:100%;' autocomplete='off' data-position='{$key}'></p>";
+        echo "<div class='mhsm-suggestions' id='mhsm_suggestions_{$key}' style='border:1px solid #ccc; display:none; background:#fff; max-height:150px; overflow:auto; z-index:1000; position:relative;'></div>";
     }
+
+    // JavaScript voor autocomplete
+    echo "<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.mhsm-condition-field').forEach(function(field) {
+            field.addEventListener('input', function() {
+                let query = this.value.trim();
+                let position = this.dataset.position;
+                let suggestionBox = document.getElementById('mhsm_suggestions_' + position);
+                if (query.length < 2) {
+                    suggestionBox.style.display = 'none';
+                    return;
+                }
+                fetch(ajaxurl + '?action=mhsm_get_page_titles&term=' + encodeURIComponent(query))
+                    .then(res => res.json())
+                    .then(data => {
+                        suggestionBox.innerHTML = '';
+                        data.forEach(title => {
+                            let div = document.createElement('div');
+                            div.textContent = title;
+                            div.style.padding = '4px';
+                            div.style.cursor = 'pointer';
+                            div.addEventListener('click', function() {
+                                field.value = 'get_the_title() === \"' + title.replace(/\"/g, '\\\"') + '\"';
+                                suggestionBox.style.display = 'none';
+                            });
+                            suggestionBox.appendChild(div);
+                        });
+                        suggestionBox.style.display = data.length ? 'block' : 'none';
+                    });
+            });
+
+            field.addEventListener('blur', function() {
+                setTimeout(() => {
+                    let box = document.getElementById('mhsm_suggestions_' + this.dataset.position);
+                    if (box) box.style.display = 'none';
+                }, 250);
+            });
+        });
+    });
+    </script>";
 }
+
 
 function mhsm_render_settings_box($post) {
     $active = get_post_meta($post->ID, '_mhsm_active', true);
@@ -128,44 +176,64 @@ function mhsm_output_snippets($position = 'header') {
     $snippets = get_posts([
         'post_type' => 'mhsm_snippet',
         'meta_query' => [
-            ['key' => '_mhsm_active', 'value' => '1']
+            [
+                'key' => '_mhsm_active',
+                'value' => '1'
+            ]
         ]
     ]);
+
+    global $post; // Zorg dat $post beschikbaar is binnen eval()
 
     foreach ($snippets as $snippet) {
         $code = get_post_meta($snippet->ID, "_mhsm_code_{$position}", true);
         $type = get_post_meta($snippet->ID, "_mhsm_type_{$position}", true);
         $condition = get_post_meta($snippet->ID, "_mhsm_condition_{$position}", true);
 
-        if (empty($code)) continue;
+        if (empty($code)) {
+            continue;
+        }
 
+        // Conditie evaluatie (optioneel)
         if (!empty($condition)) {
             try {
-                if (!eval("return ({$condition});")) continue;
+                // Evalueer de PHP-conditie veilig
+                if (!eval("return ({$condition});")) {
+                    continue;
+                }
             } catch (Throwable $e) {
                 error_log("[MHSM] Fout in conditie van snippet #{$snippet->ID} ({$position}): " . $e->getMessage());
                 continue;
             }
         }
 
+        // Output startcommentaar
         echo "\n<!-- Snippet #{$snippet->ID} ({$type} in {$position}) -->\n";
+
         switch ($type) {
             case 'html':
                 echo $code;
                 break;
+
             case 'css':
                 echo "<style>{$code}</style>";
                 break;
+
             case 'js':
                 echo "<script>{$code}</script>";
                 break;
+
             case 'php':
                 mhsm_execute_php($code, $snippet->ID, $position);
                 break;
         }
+
+        // Output eindcommentaar
         echo "\n<!-- Einde Snippet #{$snippet->ID} -->\n";
     }
 }
+
+
 
 // ───── Veilige PHP-executie met logging ─────
 function mhsm_execute_php($code, $snippet_id, $position) {
@@ -197,3 +265,20 @@ function mhsm_execute_php($code, $snippet_id, $position) {
 add_action('wp_head', function() { mhsm_output_snippets('header'); });
 add_action('wp_body_open', function() { mhsm_output_snippets('body'); });
 add_action('wp_footer', function() { mhsm_output_snippets('footer'); });
+
+add_action('wp_ajax_mhsm_get_page_titles', function() {
+    $term = sanitize_text_field($_GET['term'] ?? '');
+    $pages = get_pages([
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'suppress_filters' => false,
+    ]);
+    $matches = [];
+    foreach ($pages as $page) {
+        if (stripos($page->post_title, $term) !== false) {
+            $matches[] = $page->post_title;
+        }
+    }
+    wp_send_json(array_slice($matches, 0, 10));
+});
+
