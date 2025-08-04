@@ -107,9 +107,8 @@ function castaar_custom_admin_footer() {
             </a>';
 }
 
-// 🧩 Dashboard widget met tekst links en logo rechtsonder
+// ➕ Voeg je eigen widget toe
 add_action('wp_dashboard_setup', 'castaar_dashboard_widget');
-
 function castaar_dashboard_widget() {
     wp_add_dashboard_widget(
         'castaar_info_widget',
@@ -118,22 +117,43 @@ function castaar_dashboard_widget() {
     );
 }
 function castaar_render_dashboard_widget() {
-    $logo = esc_url(castaar_logo_url());
+    $logo = esc_url('https://castaar.com/dev/castaar.gif');
     echo '
     <div style="position: relative; min-height: 120px; font-size: 14px; line-height: 1.6; padding-right: 100px;">
         <div>
-       
             <p>Heb je vragen of hulp nodig bij je site? Contacteer ons gerust.</p>
-
             <p>
                 <strong>📞</strong> <a href="tel:+3254255178">+32 (0)54 255 178</a><br>
                 <strong>✉️</strong> <a href="mailto:info@castaar.com">info@castaar.com</a><br>
                 <strong>🌐</strong> <a href="https://castaar.com" target="_blank">castaar.com</a><br>
             </p>
         </div>
-<a href="https://castaar.com" target="_blank" style="position: absolute; bottom: 0; right: 0; display: inline-block;">
+        <a href="https://castaar.com" target="_blank" style="position: absolute; bottom: 0; right: 0;">
             <img src="' . $logo . '" alt="Castaar" style="height: 30px;" />
         </a>
     </div>';
 }
 
+// ✅ Verwijder alle andere dashboard-widgets behalve Castaar + Site Kit
+add_action('wp_dashboard_setup', 'castaar_exclusive_dashboard_widgets', 999);
+function castaar_exclusive_dashboard_widgets() {
+    global $wp_meta_boxes;
+
+    // Widgets behouden (Castaar + Google Site Kit)
+    $castaar_widget = $wp_meta_boxes['dashboard']['normal']['core']['castaar_info_widget'] ?? [];
+    $sitekit_widget = $wp_meta_boxes['dashboard']['normal']['core']['google_dashboard_widget'] ?? [];
+
+    // Reset alle widgets
+    $wp_meta_boxes['dashboard'] = [
+        'normal' => ['core' => []],
+        'side'   => ['core' => []],
+    ];
+
+    // Zet gewenste widgets terug
+    if (!empty($castaar_widget)) {
+        $wp_meta_boxes['dashboard']['normal']['core']['castaar_info_widget'] = $castaar_widget;
+    }
+    if (!empty($sitekit_widget)) {
+        $wp_meta_boxes['dashboard']['normal']['core']['google_dashboard_widget'] = $sitekit_widget;
+    }
+}
