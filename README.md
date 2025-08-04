@@ -1,7 +1,7 @@
 # 📦 DevCas – SEO & Admin Toolkit
 
 **Auteur:** [Castaar – Alec Meganck & Robbe Cooman](https://castaar.com)  
-**Versie:** 1.0.0  
+**Versie:** 1.0.6
 **Plugin URL:** [GitHub Repository](https://github.com/NeZotVanCastaar/devcas)  
 
 ---
