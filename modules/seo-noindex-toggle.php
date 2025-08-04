@@ -38,3 +38,19 @@ add_action('wp_head', function() {
         }
     }
 });
+
+add_filter('wp_sitemaps_posts_query_args', function($args, $post_type) {
+    $args['meta_query'] = [
+        'relation' => 'OR',
+        [
+            'key'     => '_seo_noindex',
+            'compare' => 'NOT EXISTS',
+        ],
+        [
+            'key'     => '_seo_noindex',
+            'value'   => '1',
+            'compare' => '!=',
+        ],
+    ];
+    return $args;
+}, 10, 2);
