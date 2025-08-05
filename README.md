@@ -42,10 +42,6 @@
 * Side metabox om “noindex” toe te voegen per post/pagina
 * Kolomweergave in admin + quick edit ondersteuning
 
-### 🔀 Post Duplicator
-
-* "Dupliceren" link in de lijstweergave voor snelle contentduplicatie
-
 ### 🎛️ SEO Score Kolom
 
 * SEO Score badge in de WordPress admin lijstweergave
@@ -80,6 +76,7 @@
 * `pagina_editor` gebruikersrol met uitgebreide rechten
 * Drag & drop ordering van alle post types (menu\_order)
 * Drafts automatisch verborgen uit navigatie
+* "Dupliceren" link in de lijstweergave voor snelle contentduplicatie
 
 ---
 
