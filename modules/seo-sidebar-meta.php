@@ -2,6 +2,11 @@
 
 
 add_action('add_meta_boxes', function() {
+    // Alleen tonen voor administrators
+    if (!current_user_can('administrator')) {
+        return;
+    }
+
     $post_types = get_post_types(['public' => true], 'names');
     foreach ($post_types as $post_type) {
         add_meta_box(
@@ -321,7 +326,11 @@ add_action('save_post', function($post_id) {
     if (!isset($_POST['page_meta_tags_nonce']) || !wp_verify_nonce($_POST['page_meta_tags_nonce'], 'save_page_meta_tags')) {
         return;
     }
+
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+
+    // Alleen admins mogen opslaan
+    if (!current_user_can('administrator')) return;
 
     update_post_meta($post_id, '_custom_meta_title', sanitize_text_field($_POST['custom_meta_title'] ?? ''));
     update_post_meta($post_id, '_custom_meta_description', sanitize_textarea_field($_POST['custom_meta_description'] ?? ''));
@@ -332,9 +341,9 @@ add_action('save_post', function($post_id) {
         update_post_meta($post_id, "_$field", sanitize_text_field($_POST[$field] ?? ''));
     }
 
-    // 🔁 Cache verversen
     delete_transient('seo_score_' . $post_id);
 });
+
 
 
 add_action('wp_head', function() {
@@ -437,6 +446,9 @@ function calculate_seo_score_for_post($post_id) {
 
 
 add_action('admin_init', function() {
+    // Alleen admins mogen SEO kolom zien
+    if (!current_user_can('administrator')) return;
+
     $post_types = get_post_types(['public' => true], 'names');
     foreach ($post_types as $post_type) {
         add_filter("manage_{$post_type}_posts_columns", function($columns) {
@@ -444,47 +456,46 @@ add_action('admin_init', function() {
             return $columns;
         });
 
-       add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
-    if ($column_name === 'seo_score') {
-        $score = calculate_seo_score_for_post($post_id);
-        $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
-        $content = get_post_field('post_content', $post_id);
-        $site_url = home_url();
+        add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
+            if ($column_name === 'seo_score') {
+                $score = calculate_seo_score_for_post($post_id);
+                $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
+                $content = get_post_field('post_content', $post_id);
+                $site_url = home_url();
 
-        // kleur bepalen
-        $bg = '#f44336'; // rood
-        if ($score >= 75) $bg = '#4caf50'; // groen
-        elseif ($score >= 25) $bg = '#ffc107'; // geel
+                // kleur bepalen
+                $bg = '#f44336'; // rood
+                if ($score >= 75) $bg = '#4caf50'; // groen
+                elseif ($score >= 25) $bg = '#ffc107'; // geel
 
-        // score badge
-        echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:4px;">' . $score . ' / 100</div>';
+                // score badge
+                echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:4px;">' . $score . ' / 100</div>';
 
-        // hoofdkeyword tonen
-        if (!empty($main_kw)) {
-            echo '<div style="margin-top:3px;font-size:11px;color:#555;"><strong>Keyword:</strong> ' . esc_html($main_kw) . '</div>';
-        }
-
-        // interne en externe links tellen
-        $internal_links = 0;
-        $external_links = 0;
-
-        preg_match_all('/<a[^>]+href=["\']([^"\']+)["\']/', $content, $matches);
-        if (!empty($matches[1])) {
-            foreach ($matches[1] as $url) {
-                if (strpos($url, $site_url) === 0) {
-                    $internal_links++;
-                } elseif (strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
-                    $external_links++;
+                // hoofdkeyword tonen
+                if (!empty($main_kw)) {
+                    echo '<div style="margin-top:3px;font-size:11px;color:#555;"><strong>Keyword:</strong> ' . esc_html($main_kw) . '</div>';
                 }
+
+                // interne en externe links tellen
+                $internal_links = 0;
+                $external_links = 0;
+
+                preg_match_all('/<a[^>]+href=["\']([^"\']+)["\']/', $content, $matches);
+                if (!empty($matches[1])) {
+                    foreach ($matches[1] as $url) {
+                        if (strpos($url, $site_url) === 0) {
+                            $internal_links++;
+                        } elseif (strpos($url, 'http') === 0 || strpos($url, '//') === 0) {
+                            $external_links++;
+                        }
+                    }
+                }
+
+                // tonen
+                echo '<div style="margin-top:3px;font-size:11px;color:#555;">';
+                echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' intern | 🌐 ' . $external_links . ' extern';
+                echo '</div>';
             }
-        }
-
-        // tonen
-        echo '<div style="margin-top:3px;font-size:11px;color:#555;">';
-        echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' intern | 🌐 ' . $external_links . ' extern';
-        echo '</div>';
-    }
-}, 10, 2);
-
+        }, 10, 2);
     }
 });

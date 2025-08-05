@@ -18,6 +18,13 @@ function render_sitemap_settings_page()
     ?>
     <div class="wrap">
         <h1>Sitemap-instellingen</h1>
+
+        <p>
+            <a href="<?php echo esc_url(home_url('/wp-sitemap.xml')); ?>" class="button button-primary" target="_blank">
+                Sitemap openen
+            </a>
+        </p>
+
         <form method="post" action="options.php">
             <?php
             settings_fields('custom_sitemap_settings');
@@ -28,6 +35,10 @@ function render_sitemap_settings_page()
     </div>
     <?php
 }
+
+
+
+
 
 // ➤ Register instellingen en velden
 add_action('admin_init', function () {

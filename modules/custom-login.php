@@ -9,10 +9,20 @@ add_filter('query_vars', function ($vars) {
 });
 
 add_action('template_redirect', function () {
-    if (intval(get_query_var('custom_login')) === 1) {
-        require_once ABSPATH . 'wp-login.php';
-        exit;
+if (intval(get_query_var('custom_login')) === 1) {
+    global $error, $user_login;
+    
+    if (!isset($error)) {
+        $error = '';
     }
+    if (!isset($user_login)) {
+        $user_login = '';
+    }
+
+    require_once ABSPATH . 'wp-login.php';
+    exit;
+}
+
 });
 
 // ❌ Blokkeer directe toegang tot wp-login.php behalve via /develop

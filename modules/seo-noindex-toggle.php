@@ -1,6 +1,6 @@
 <?php
 
-
+// =============== METABOX ===================
 add_action('add_meta_boxes', function() {
     add_meta_box(
         'seo_noindex_toggle',
@@ -14,12 +14,13 @@ add_action('add_meta_boxes', function() {
             </label>
             <?php
         },
-        ['post', 'page'], // eventueel uitbreiden met je eigen CPT's
+        ['post', 'page'],
         'side',
         'default'
     );
 });
 
+// =============== OPSLAAN ===================
 add_action('save_post', function($post_id) {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
 
@@ -30,6 +31,7 @@ add_action('save_post', function($post_id) {
     }
 });
 
+// =============== FRONTEND OUTPUT ===================
 add_action('wp_head', function() {
     if (is_singular()) {
         $noindex = get_post_meta(get_the_ID(), '_seo_noindex', true);
@@ -39,6 +41,7 @@ add_action('wp_head', function() {
     }
 });
 
+// =============== SITEMAP FILTER ===================
 add_filter('wp_sitemaps_posts_query_args', function($args, $post_type) {
     $args['meta_query'] = [
         'relation' => 'OR',
@@ -54,3 +57,84 @@ add_filter('wp_sitemaps_posts_query_args', function($args, $post_type) {
     ];
     return $args;
 }, 10, 2);
+
+// =============== ADMIN KOLOM ===================
+add_filter('manage_post_posts_columns', function($columns) {
+    $columns['seo_noindex'] = 'Noindex';
+    return $columns;
+});
+add_filter('manage_page_posts_columns', function($columns) {
+    $columns['seo_noindex'] = 'Noindex';
+    return $columns;
+});
+
+add_action('manage_post_posts_custom_column', function($column, $post_id) {
+    if ($column === 'seo_noindex') {
+        $value = get_post_meta($post_id, '_seo_noindex', true);
+        echo $value === '1' ? '🚫' : '✅';
+    }
+}, 10, 2);
+add_action('manage_page_posts_custom_column', function($column, $post_id) {
+    if ($column === 'seo_noindex') {
+        $value = get_post_meta($post_id, '_seo_noindex', true);
+        echo $value === '1' ? '🚫' : '✅';
+    }
+}, 10, 2);
+
+// =============== QUICK EDIT UI ===================
+add_action('quick_edit_custom_box', function($column_name, $post_type) {
+    if ($column_name !== 'seo_noindex') return;
+    ?>
+    <fieldset class="inline-edit-col-right">
+        <div class="inline-edit-col">
+            <label class="alignleft">
+                <input type="checkbox" name="seo_noindex" value="1">
+                <span class="checkbox-title">Noindex (voorkom indexatie)</span>
+            </label>
+        </div>
+    </fieldset>
+    <?php
+}, 10, 2);
+
+// =============== QUICK EDIT JS: CHECKBOX VULLEN ===================
+// Zet checkbox correct aan of uit in Quick Edit bij openen
+add_action('admin_footer-edit.php', function() {
+    global $typenow;
+    if (!in_array($typenow, ['post', 'page'])) return;
+
+    ?>
+    <script>
+    jQuery(function($) {
+        const seoNoindexData = {};
+
+        // Verzamel data uit kolom
+        $('#the-list tr').each(function() {
+            const $row = $(this);
+            const postId = $row.attr('id')?.replace('post-', '');
+            if (!postId) return;
+
+            const isNoindex = $row.find('.column-seo_noindex').text().trim() === '🚫';
+            seoNoindexData[postId] = isNoindex;
+        });
+
+        // Hook op het openen van Quick Edit
+        const $inlineEditor = inlineEditPost;
+        const originalEdit = $inlineEditor.edit;
+
+        $inlineEditor.edit = function(postId) {
+            originalEdit.apply(this, arguments);
+
+            if (typeof(postId) === 'object') {
+                postId = this.getId(postId);
+            }
+
+            const $editRow = $('#edit-' + postId);
+            const checked = seoNoindexData[postId] || false;
+
+            $editRow.find('input[name="seo_noindex"]').prop('checked', checked);
+        };
+    });
+    </script>
+    <?php
+});
+
