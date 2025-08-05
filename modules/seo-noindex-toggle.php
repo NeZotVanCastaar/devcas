@@ -1,27 +1,33 @@
 <?php
 
-// =============== METABOX ===================
+// =============== METABOX (alleen voor admins) ===================
 add_action('add_meta_boxes', function() {
-    add_meta_box(
-        'seo_noindex_toggle',
-        'Indexeerbaarheid',
-        function($post) {
-            $noindex = get_post_meta($post->ID, '_seo_noindex', true);
-            ?>
-            <label>
-                <input type="checkbox" name="seo_noindex" value="1" <?php checked($noindex, '1'); ?> />
-                <strong>Voorkom indexatie</strong> door zoekmachines (voegt <code>noindex</code> toe)
-            </label>
-            <?php
-        },
-        ['post', 'page'],
-        'side',
-        'default'
-    );
+    if (!current_user_can('administrator')) return;
+
+    $post_types = get_post_types(['public' => true]);
+    foreach ($post_types as $post_type) {
+        add_meta_box(
+            'seo_noindex_toggle',
+            'Indexeerbaarheid',
+            function($post) {
+                $noindex = get_post_meta($post->ID, '_seo_noindex', true);
+                ?>
+                <label>
+                    <input type="checkbox" name="seo_noindex" value="1" <?php checked($noindex, '1'); ?> />
+                    <strong>Voorkom indexatie</strong> door zoekmachines (voegt <code>noindex</code> toe)
+                </label>
+                <?php
+            },
+            $post_type,
+            'side',
+            'default'
+        );
+    }
 });
 
-// =============== OPSLAAN ===================
+// =============== OPSLAAN METADATA ===================
 add_action('save_post', function($post_id) {
+    if (!current_user_can('administrator')) return;
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
 
     if (isset($_POST['seo_noindex'])) {
@@ -58,31 +64,30 @@ add_filter('wp_sitemaps_posts_query_args', function($args, $post_type) {
     return $args;
 }, 10, 2);
 
-// =============== ADMIN KOLOM ===================
-add_filter('manage_post_posts_columns', function($columns) {
-    $columns['seo_noindex'] = 'Noindex';
-    return $columns;
-});
-add_filter('manage_page_posts_columns', function($columns) {
-    $columns['seo_noindex'] = 'Noindex';
-    return $columns;
+// =============== ADMIN KOLOMMEN (alleen voor admins) ===================
+add_action('admin_init', function() {
+    if (!current_user_can('administrator')) return;
+
+    $post_types = get_post_types(['public' => true]);
+
+    foreach ($post_types as $post_type) {
+        add_filter("manage_{$post_type}_posts_columns", function($columns) {
+            $columns['seo_noindex'] = 'Noindex';
+            return $columns;
+        });
+
+        add_action("manage_{$post_type}_posts_custom_column", function($column, $post_id) {
+            if ($column === 'seo_noindex') {
+                $value = get_post_meta($post_id, '_seo_noindex', true);
+                echo $value === '1' ? '🚫' : '✅';
+            }
+        }, 10, 2);
+    }
 });
 
-add_action('manage_post_posts_custom_column', function($column, $post_id) {
-    if ($column === 'seo_noindex') {
-        $value = get_post_meta($post_id, '_seo_noindex', true);
-        echo $value === '1' ? '🚫' : '✅';
-    }
-}, 10, 2);
-add_action('manage_page_posts_custom_column', function($column, $post_id) {
-    if ($column === 'seo_noindex') {
-        $value = get_post_meta($post_id, '_seo_noindex', true);
-        echo $value === '1' ? '🚫' : '✅';
-    }
-}, 10, 2);
-
-// =============== QUICK EDIT UI ===================
+// =============== QUICK EDIT UI (alleen voor admins) ===================
 add_action('quick_edit_custom_box', function($column_name, $post_type) {
+    if (!current_user_can('administrator')) return;
     if ($column_name !== 'seo_noindex') return;
     ?>
     <fieldset class="inline-edit-col-right">
@@ -96,18 +101,18 @@ add_action('quick_edit_custom_box', function($column_name, $post_type) {
     <?php
 }, 10, 2);
 
-// =============== QUICK EDIT JS: CHECKBOX VULLEN ===================
-// Zet checkbox correct aan of uit in Quick Edit bij openen
+// =============== QUICK EDIT JS: CHECKBOX VULLEN (alleen voor admins) ===================
 add_action('admin_footer-edit.php', function() {
+    if (!current_user_can('administrator')) return;
+
     global $typenow;
-    if (!in_array($typenow, ['post', 'page'])) return;
+    if (!post_type_supports($typenow, 'title')) return;
 
     ?>
     <script>
     jQuery(function($) {
         const seoNoindexData = {};
 
-        // Verzamel data uit kolom
         $('#the-list tr').each(function() {
             const $row = $(this);
             const postId = $row.attr('id')?.replace('post-', '');
@@ -117,7 +122,6 @@ add_action('admin_footer-edit.php', function() {
             seoNoindexData[postId] = isNoindex;
         });
 
-        // Hook op het openen van Quick Edit
         const $inlineEditor = inlineEditPost;
         const originalEdit = $inlineEditor.edit;
 
@@ -137,4 +141,3 @@ add_action('admin_footer-edit.php', function() {
     </script>
     <?php
 });
-
