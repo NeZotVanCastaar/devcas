@@ -1,9 +1,4 @@
 <?php
-/**
- * Plugin Name: Custom Post Order Everywhere
- * Description: Maak alle post types sorteerbaar via drag & drop in de admin.
- * Author: Alec Meganck
- */
 
 if (!defined('ABSPATH')) exit;
 
