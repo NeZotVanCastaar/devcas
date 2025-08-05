@@ -3,6 +3,7 @@
 
 // ➤ Admin menu item toevoegen
 add_action('admin_menu', function () {
+     if (!current_user_can('administrator')) return;
     add_options_page(
         'Sitemap-instellingen',
         'Sitemap-instellingen',

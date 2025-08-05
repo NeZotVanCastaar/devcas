@@ -56,6 +56,7 @@ function castaar_auto_alt_on_upload($attachment_id) {
 add_action('admin_menu', 'castaar_alt_generator_menu');
 
 function castaar_alt_generator_menu() {
+     if (!current_user_can('administrator')) return;
     add_media_page(
         'ALT-tags genereren',
         'ALT-tags genereren',

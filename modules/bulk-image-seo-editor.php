@@ -3,6 +3,7 @@
 defined('ABSPATH') || exit;
 
 add_action('admin_menu', function() {
+     if (!current_user_can('administrator')) return;
     add_media_page(
         'Bulk SEO Editor',
         'Bulk SEO Editor',

@@ -5,6 +5,7 @@ if (!defined('ABSPATH')) exit;
 
 // ───── CPT ─────
 function mhsm_register_snippet_post_type() {
+     if (!current_user_can('administrator')) return;
     register_post_type('mhsm_snippet', [
         'labels' => [
             'name' => 'Snippets',
