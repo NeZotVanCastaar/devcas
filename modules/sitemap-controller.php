@@ -87,37 +87,85 @@ add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
     return array_intersect_key($taxonomies, array_flip($allowed));
 });
 
-// ➤ Posts filteren op basis van WPML-taal
+// ➤ Posts filteren op basis van WPML én noindex
 add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
-    // Probeer taal via WPML op te halen
-    $current_lang = apply_filters('wpml_current_language', null);
+    // ➤ WPML-taal ophalen
+    $current_lang = apply_filters('wpml_current_language', null) ?: (
+        function_exists('wpml_get_default_language') ? wpml_get_default_language() : 'nl'
+    );
 
-    // Fallbacks indien taal niet beschikbaar is
-    if (!$current_lang) {
-        if (function_exists('wpml_get_default_language')) {
-            $current_lang = wpml_get_default_language(); // meestal 'nl'
-        } else {
-            $current_lang = 'nl';
-        }
-    }
-
+    // ➤ Beperk tot vertaalde posts
     if ($current_lang && function_exists('icl_object_id')) {
         global $wpdb;
-
-        // Zoek vertaalde posts in juiste taal
         $translation_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT element_id FROM {$wpdb->prefix}icl_translations WHERE language_code = %s AND element_type = %s",
             $current_lang,
             'post_' . $post_type
         ));
-
-        // Beperk query op juiste taal-ID's
-        if (!empty($translation_ids)) {
-            $args['post__in'] = $translation_ids;
-        } else {
-            $args['post__in'] = [0]; // sitemap leeg als niets gevonden
-        }
+        $args['post__in'] = !empty($translation_ids) ? $translation_ids : [0];
     }
+
+    // ➤ Sluit posts uit met _seo_noindex = 1
+    $args['meta_query'][] = [
+        'relation' => 'OR',
+        [
+            'key'     => '_seo_noindex',
+            'compare' => 'NOT EXISTS',
+        ],
+        [
+            'key'     => '_seo_noindex',
+            'value'   => '1',
+            'compare' => '!=',
+        ],
+    ];
 
     return $args;
 }, 10, 2);
+
+// ➤ Voeg automatisch noindex toe als pagina niet in sitemap mag
+add_action('wp_head', function () {
+    if (is_singular()) {
+        global $post;
+        $post_type = get_post_type($post);
+        $allowed_post_types = get_option('custom_sitemap_enabled_post_types', []);
+
+        // ➤ 1. Post type niet toegestaan
+        if (!in_array($post_type, $allowed_post_types)) {
+            echo '<meta name="robots" content="noindex, follow">' . "\n";
+            return;
+        }
+
+        // ➤ 2. Handmatig op noindex gezet
+        $manual_noindex = get_post_meta($post->ID, '_seo_noindex', true);
+        if ($manual_noindex === '1') {
+            echo '<meta name="robots" content="noindex, follow">' . "\n";
+            return;
+        }
+
+        // ➤ 3. Niet in huidige taalversie via WPML
+        if (function_exists('apply_filters') && function_exists('icl_object_id')) {
+            $current_lang = apply_filters('wpml_current_language', null) ?: (
+                function_exists('wpml_get_default_language') ? wpml_get_default_language() : 'nl'
+            );
+            global $wpdb;
+            $translated_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT element_id FROM {$wpdb->prefix}icl_translations WHERE language_code = %s AND element_type = %s",
+                $current_lang,
+                'post_' . $post_type
+            ));
+            if (!in_array($post->ID, $translated_ids)) {
+                echo '<meta name="robots" content="noindex, follow">' . "\n";
+                return;
+            }
+        }
+    }
+
+    // ➤ Voor taxonomie-archieven
+    if (is_tax() || is_category() || is_tag()) {
+        $taxonomy = get_queried_object()->taxonomy ?? null;
+        $allowed_taxonomies = get_option('custom_sitemap_enabled_taxonomies', []);
+        if ($taxonomy && !in_array($taxonomy, $allowed_taxonomies)) {
+            echo '<meta name="robots" content="noindex, follow">' . "\n";
+        }
+    }
+});
