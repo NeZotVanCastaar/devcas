@@ -18,21 +18,23 @@ add_action('template_redirect', function () {
 // ❌ Blokkeer directe toegang tot wp-login.php behalve via /develop
 add_action('login_init', function () {
     $expected = '/develop';
-    $actual   = $_SERVER['REQUEST_URI'];
+    $actual   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-    if (stripos($actual, 'wp-login.php') !== false && stripos($actual, $expected) === false) {
-        status_header(403);
-        exit('Toegang geweigerd.');
+    if (stripos($actual, 'wp-login.php') !== false && $actual !== $expected) {
+        wp_redirect(home_url());
+        exit;
     }
 });
+
 
 // ❌ Blokkeer toegang tot /wp-admin tenzij ingelogd
 add_action('admin_init', function () {
     if (!is_user_logged_in()) {
-        status_header(403);
-        exit('Geen toegang tot admin.');
+        wp_redirect(home_url());
+        exit;
     }
 });
+
 
 // ✔️ Flush permalinks bij activeren/deactiveren
 register_activation_hook(__FILE__, function () {
