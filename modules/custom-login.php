@@ -1,58 +1,55 @@
 <?php
+
 add_action('init', function () {
-    add_rewrite_rule('^develop/?$', 'index.php?custom_login=1', 'top');
-});
+    $new_login_slug = 'develop';
+    $request_uri = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
 
-add_filter('query_vars', function ($vars) {
-    $vars[] = 'custom_login';
-    return $vars;
-});
+    // Lijst van geblokkeerde routes
+    $blocked_slugs = [
+        'wp-login.php',
+        'wp-login.php?action=login',
+        'login',
+        'admin',
+        'wp-admin',
+    ];
 
-add_action('template_redirect', function () {
-if (intval(get_query_var('custom_login')) === 1) {
-    global $error, $user_login;
-    
-    if (!isset($error)) {
-        $error = '';
+    // Blokkeer bekende login-urls voor NIET-ingelogde gebruikers
+    if (in_array($request_uri, $blocked_slugs) && $request_uri !== $new_login_slug) {
+        if (!is_user_logged_in()) {
+            wp_redirect(home_url());
+            exit;
+        }
     }
-    if (!isset($user_login)) {
-        $user_login = '';
-    }
 
-    require_once ABSPATH . 'wp-login.php';
-    exit;
-}
-
-});
-
-// ❌ Blokkeer directe toegang tot wp-login.php behalve via /develop
-add_action('login_init', function () {
-    $expected = '/develop';
-    $actual   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
-    if (stripos($actual, 'wp-login.php') !== false && $actual !== $expected) {
-        wp_redirect(home_url());
+    // Toegang tot aangepaste loginpagina
+    if ($request_uri === $new_login_slug) {
+        require_once ABSPATH . 'wp-login.php';
         exit;
     }
 });
 
-
-// ❌ Blokkeer toegang tot /wp-admin tenzij ingelogd
-add_action('admin_init', function () {
-    if (!is_user_logged_in()) {
-        wp_redirect(home_url());
-        exit;
+// Zorg ervoor dat logout redirect teruggaat naar /develop
+add_filter('site_url', function ($url, $path, $orig_scheme, $blog_id) {
+    $new_login_slug = 'develop';
+    if ($path === 'wp-login.php' || $path === '/wp-login.php') {
+        if (strpos($_SERVER['REQUEST_URI'], $new_login_slug) !== false) {
+            return home_url('/' . $new_login_slug);
+        }
     }
-});
+    return $url;
+}, 10, 4);
+
+// Zorg voor correcte redirect NA login
+add_filter('login_redirect', function ($redirect_to, $request, $user) {
+    if (is_wp_error($user)) {
+        return home_url(); // Bij login error
+    }
+
+    // Stuur naar admin-dashboard
+    return admin_url();
+}, 10, 3);
 
 
-// ✔️ Flush permalinks bij activeren/deactiveren
-register_activation_hook(__FILE__, function () {
-    flush_rewrite_rules();
-});
-register_deactivation_hook(__FILE__, function () {
-    flush_rewrite_rules();
-});
 
 remove_action('wp_head', 'wp_generator'); 
 add_filter('the_generator', '__return_empty_string');
