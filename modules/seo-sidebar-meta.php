@@ -425,3 +425,44 @@ add_action('admin_init', function() {
         }, 10, 2);
     }
 });
+
+// === FRONT-END META TAGS UIT JE CUSTOM FIELDS ===
+// Plaats dit onderaan je pluginbestand.
+add_action('wp_head', function () {
+    if (!is_singular()) {
+        return;
+    }
+
+    $post_id = get_queried_object_id();
+
+    // 1) META DESCRIPTION (belangrijk voor Google)
+    $meta_description = get_post_meta($post_id, '_custom_meta_description', true);
+    if (!empty($meta_description)) {
+        echo '<meta name="description" content="' . esc_attr(wp_strip_all_tags($meta_description)) . '">' . "\n";
+    }
+
+    // 2) (Optioneel) META KEYWORDS — door Google genegeerd, mag je weglaten
+    $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
+    $extra = [];
+    for ($i = 1; $i <= 4; $i++) {
+        $val = get_post_meta($post_id, "_custom_extra_keyword_$i", true);
+        if (!empty($val)) $extra[] = $val;
+    }
+    $keywords = array_filter(array_map('trim', array_unique(array_merge([$main_kw], $extra))));
+    if (!empty($keywords)) {
+        echo '<meta name="keywords" content="' . esc_attr(implode(', ', $keywords)) . '">' . "\n";
+    }
+
+    // 3) (Aanrader) OG/Twitter voor betere social previews
+    $custom_title = get_post_meta($post_id, '_custom_meta_title', true);
+    if (!empty($custom_title)) {
+        $t = esc_attr(wp_strip_all_tags($custom_title));
+        echo '<meta property="og:title" content="' . $t . '">' . "\n";
+        echo '<meta name="twitter:title" content="' . $t . '">' . "\n";
+    }
+    if (!empty($meta_description)) {
+        $d = esc_attr(wp_strip_all_tags($meta_description));
+        echo '<meta property="og:description" content="' . $d . '">' . "\n";
+        echo '<meta name="twitter:description" content="' . $d . '">' . "\n";
+    }
+}, 5); // vroeg laten lopen is prima
