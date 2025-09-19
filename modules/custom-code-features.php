@@ -67,7 +67,7 @@ function devcas_duplicate_link($actions, $post) {
     return $actions;
 }
 
-// Register duplicate post action
+// Duplicate post action
 add_action('admin_action_devcas_duplicate_post', function() {
     if (
         empty($_GET['post']) ||
@@ -83,6 +83,7 @@ add_action('admin_action_devcas_duplicate_post', function() {
         wp_die('Bericht niet gevonden.');
     }
 
+    // Nieuwe post maken
     $new_post_args = [
         'post_title'     => $post->post_title . ' (kopie)',
         'post_content'   => $post->post_content,
@@ -91,28 +92,55 @@ add_action('admin_action_devcas_duplicate_post', function() {
         'post_excerpt'   => $post->post_excerpt,
         'post_author'    => get_current_user_id(),
         'post_parent'    => $post->post_parent,
+        'menu_order'     => $post->menu_order,
+        'post_password'  => $post->post_password,
+        'post_name'      => $post->post_name . '-kopie',
     ];
 
     $new_post_id = wp_insert_post($new_post_args);
 
-    // Kopieer taxonomieën
+    // ✅ Uitgelichte afbeelding kopiëren
+    $thumbnail_id = get_post_thumbnail_id($post_id);
+    if ($thumbnail_id) {
+        set_post_thumbnail($new_post_id, $thumbnail_id);
+    }
+
+    // ✅ Taxonomieën kopiëren
     $taxonomies = get_object_taxonomies($post->post_type);
     foreach ($taxonomies as $taxonomy) {
         $terms = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'slugs']);
-        wp_set_object_terms($new_post_id, $terms, $taxonomy, false);
-    }
-
-    // Kopieer meta-data
-    $meta = get_post_meta($post_id);
-    foreach ($meta as $key => $values) {
-        foreach ($values as $value) {
-            add_post_meta($new_post_id, $key, maybe_unserialize($value));
+        if (!empty($terms)) {
+            wp_set_object_terms($new_post_id, $terms, $taxonomy, false);
         }
     }
 
+    // ✅ Alle meta (incl. Elementor, ACF, SEO, etc.)
+    $meta = get_post_meta($post_id);
+    foreach ($meta as $key => $values) {
+        foreach ($values as $value) {
+            update_post_meta($new_post_id, $key, maybe_unserialize($value));
+        }
+    }
+
+    // ✅ Bijlagen koppelen (media library items)
+    $attachments = get_children([
+        'post_parent' => $post_id,
+        'post_type'   => 'attachment'
+    ]);
+    if ($attachments) {
+        foreach ($attachments as $attachment) {
+            wp_update_post([
+                'ID'         => $attachment->ID,
+                'post_parent'=> $new_post_id
+            ]);
+        }
+    }
+
+    // Redirect naar editor van de nieuwe post
     wp_redirect(admin_url('post.php?action=edit&post=' . $new_post_id));
     exit;
 });
+
 
 // SVG's toelaten in mediabibliotheek
 add_filter('upload_mimes', function($mimes) {
