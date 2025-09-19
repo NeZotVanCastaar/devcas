@@ -67,79 +67,138 @@ function devcas_duplicate_link($actions, $post) {
     return $actions;
 }
 
-// Duplicate post action
-add_action('admin_action_devcas_duplicate_post', function() {
+<?php
+// ===============================
+//  DUPLICATE POST/LINK + ACTION
+//  (DB-level meta copy; Elementor-proof)
+// ===============================
+
+// "Dupliceren" in de lijstacties (Posts & Pagina's)
+add_filter('post_row_actions', 'devcas_duplicate_link', 10, 2);
+add_filter('page_row_actions', 'devcas_duplicate_link', 10, 2);
+function devcas_duplicate_link($actions, $post) {
+    if (current_user_can('edit_posts') && in_array($post->post_status, ['publish','private','pending','draft'], true)) {
+        $url = wp_nonce_url(
+            admin_url('admin.php?action=devcas_duplicate_post&post=' . $post->ID),
+            basename(__FILE__),
+            'duplicate_nonce'
+        );
+        $actions['duplicate'] = '<a href="' . esc_url($url) . '" title="Dupliceer deze post">Dupliceren</a>';
+    }
+    return $actions;
+}
+
+// De eigenlijke duplicate-actie
+add_action('admin_action_devcas_duplicate_post', function () {
     if (
         empty($_GET['post']) ||
         !current_user_can('edit_posts') ||
+        empty($_GET['duplicate_nonce']) ||
         !wp_verify_nonce($_GET['duplicate_nonce'], basename(__FILE__))
     ) {
         wp_die('Geen toegang.');
     }
 
     $post_id = absint($_GET['post']);
-    $post = get_post($post_id);
-    if (!$post) {
-        wp_die('Bericht niet gevonden.');
-    }
+    $post    = get_post($post_id);
+    if (!$post) wp_die('Bericht niet gevonden.');
 
-    // Nieuwe post maken
+    // 1) Nieuwe post aanmaken (slug niet forceren → WP maakt uniek)
     $new_post_args = [
-        'post_title'     => $post->post_title . ' (kopie)',
-        'post_content'   => $post->post_content,
-        'post_status'    => 'draft',
-        'post_type'      => $post->post_type,
-        'post_excerpt'   => $post->post_excerpt,
-        'post_author'    => get_current_user_id(),
-        'post_parent'    => $post->post_parent,
-        'menu_order'     => $post->menu_order,
-        'post_password'  => $post->post_password,
-        'post_name'      => $post->post_name . '-kopie',
+        'post_title'    => $post->post_title . ' (kopie)',
+        'post_content'  => $post->post_content,   // laat staan; Elementor rendert uit meta, maar content kan shortcodes bevatten
+        'post_status'   => 'draft',
+        'post_type'     => $post->post_type,
+        'post_excerpt'  => $post->post_excerpt,
+        'post_author'   => get_current_user_id(),
+        'post_parent'   => $post->post_parent,
+        'menu_order'    => $post->menu_order,
+        'post_password' => $post->post_password,
     ];
-
     $new_post_id = wp_insert_post($new_post_args);
 
-    // ✅ Uitgelichte afbeelding kopiëren
-    $thumbnail_id = get_post_thumbnail_id($post_id);
-    if ($thumbnail_id) {
-        set_post_thumbnail($new_post_id, $thumbnail_id);
+    // 2) Featured image kopiëren
+    if ($thumb_id = get_post_thumbnail_id($post_id)) {
+        set_post_thumbnail($new_post_id, $thumb_id);
     }
 
-    // ✅ Taxonomieën kopiëren
+    // 3) Taxonomieën kopiëren
     $taxonomies = get_object_taxonomies($post->post_type);
     foreach ($taxonomies as $taxonomy) {
-        $terms = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'slugs']);
-        if (!empty($terms)) {
+        $terms = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
+        if (!empty($terms) && !is_wp_error($terms)) {
             wp_set_object_terms($new_post_id, $terms, $taxonomy, false);
         }
     }
 
-    // ✅ Alle meta (incl. Elementor, ACF, SEO, etc.)
-    $meta = get_post_meta($post_id);
-    foreach ($meta as $key => $values) {
-        foreach ($values as $value) {
-            update_post_meta($new_post_id, $key, maybe_unserialize($value));
+    // 4) ALLE meta 1-op-1 kopiëren op DB-niveau (voorkomt serialize/slash issues)
+    global $wpdb;
+    $meta_table = $wpdb->postmeta;
+
+    // Keys die we bewust NIET klonen
+    $skip_keys = [
+        '_edit_lock',
+        '_edit_last',
+        '_wp_old_slug',
+        // Eventueel: '_thumbnail_id' (maar we hebben die hierboven al gezet)
+    ];
+
+    // Haal alle meta-rows van de bron op (exact zoals in DB)
+    $rows = $wpdb->get_results(
+        $wpdb->prepare("SELECT meta_key, meta_value FROM {$meta_table} WHERE post_id = %d", $post_id),
+        ARRAY_A
+    );
+
+    if ($rows) {
+        foreach ($rows as $row) {
+            $key = $row['meta_key'];
+            if (in_array($key, $skip_keys, true)) {
+                continue;
+            }
+            // _thumbnail_id laten we overslaan, want die is net al correct gezet
+            if ($key === '_thumbnail_id') {
+                continue;
+            }
+
+            // Insert exact zoals opgeslagen (geen (un)serialize/slash/encoding uitvoeren!)
+            $wpdb->insert(
+                $meta_table,
+                [
+                    'post_id'    => $new_post_id,
+                    'meta_key'   => $key,
+                    'meta_value' => $row['meta_value'],
+                ],
+                ['%d','%s','%s']
+            );
         }
     }
 
-    // ✅ Bijlagen koppelen (media library items)
-    $attachments = get_children([
-        'post_parent' => $post_id,
-        'post_type'   => 'attachment'
-    ]);
-    if ($attachments) {
-        foreach ($attachments as $attachment) {
-            wp_update_post([
-                'ID'         => $attachment->ID,
-                'post_parent'=> $new_post_id
-            ]);
+    // Zorg dat Elementor edit mode er is als de bron Elementor gebruikte
+    $src_elementor_data = get_post_meta($post_id, '_elementor_data', true);
+    if (!empty($src_elementor_data)) {
+        // Als _elementor_edit_mode ontbreekt, forceer 'builder'
+        $edit_mode = get_post_meta($new_post_id, '_elementor_edit_mode', true);
+        if (!$edit_mode) {
+            update_post_meta($new_post_id, '_elementor_edit_mode', 'builder');
         }
     }
 
-    // Redirect naar editor van de nieuwe post
+    // 5) GEEN attachments herparenten (anders problemen bij het origineel)
+    // Media blijven via URLs refereren.
+
+    // 6) Elementor CSS regenereren (als Elementor actief is)
+    if (class_exists('\Elementor\Core\Files\CSS\Post')) {
+        try { \Elementor\Core\Files\CSS\Post::create($new_post_id)->update(); } catch (\Throwable $e) {}
+    }
+    if (class_exists('\Elementor\Plugin')) {
+        try { \Elementor\Plugin::$instance->files_manager->clear_cache(); } catch (\Throwable $e) {}
+    }
+
+    // 7) Naar de editor van de kopie
     wp_redirect(admin_url('post.php?action=edit&post=' . $new_post_id));
     exit;
 });
+
 
 
 // SVG's toelaten in mediabibliotheek
