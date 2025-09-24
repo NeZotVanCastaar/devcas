@@ -51,31 +51,10 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_style('devcas-default-style', plugin_dir_url(__FILE__) . '../assets/style.css');
 });
 
-// Duplicate post link in admin lijst
+// "Dupliceren" link in de lijstacties (Posts & Pagina's)
 add_filter('post_row_actions', 'devcas_duplicate_link', 10, 2);
 add_filter('page_row_actions', 'devcas_duplicate_link', 10, 2);
 
-function devcas_duplicate_link($actions, $post) {
-    if (current_user_can('edit_posts') && $post->post_status === 'publish') {
-        $url = wp_nonce_url(
-            admin_url('admin.php?action=devcas_duplicate_post&post=' . $post->ID),
-            basename(__FILE__),
-            'duplicate_nonce'
-        );
-        $actions['duplicate'] = '<a href="' . esc_url($url) . '" title="Dupliceer deze post">Dupliceren</a>';
-    }
-    return $actions;
-}
-
-<?php
-// ===============================
-//  DUPLICATE POST/LINK + ACTION
-//  (DB-level meta copy; Elementor-proof)
-// ===============================
-
-// "Dupliceren" in de lijstacties (Posts & Pagina's)
-add_filter('post_row_actions', 'devcas_duplicate_link', 10, 2);
-add_filter('page_row_actions', 'devcas_duplicate_link', 10, 2);
 function devcas_duplicate_link($actions, $post) {
     if (current_user_can('edit_posts') && in_array($post->post_status, ['publish','private','pending','draft'], true)) {
         $url = wp_nonce_url(
@@ -83,7 +62,7 @@ function devcas_duplicate_link($actions, $post) {
             basename(__FILE__),
             'duplicate_nonce'
         );
-        $actions['duplicate'] = '<a href="' . esc_url($url) . '" title="Dupliceer deze post">Dupliceren</a>';
+        $actions['duplicate'] = '<a href="' . esc_url($url) . '" title="Dupliceer dit item">Dupliceren</a>';
     }
     return $actions;
 }
@@ -103,10 +82,10 @@ add_action('admin_action_devcas_duplicate_post', function () {
     $post    = get_post($post_id);
     if (!$post) wp_die('Bericht niet gevonden.');
 
-    // 1) Nieuwe post aanmaken (slug niet forceren → WP maakt uniek)
+    // 1) Nieuwe post aanmaken (WP zorgt zelf voor unieke slug)
     $new_post_args = [
         'post_title'    => $post->post_title . ' (kopie)',
-        'post_content'  => $post->post_content,   // laat staan; Elementor rendert uit meta, maar content kan shortcodes bevatten
+        'post_content'  => $post->post_content,
         'post_status'   => 'draft',
         'post_type'     => $post->post_type,
         'post_excerpt'  => $post->post_excerpt,
@@ -131,19 +110,17 @@ add_action('admin_action_devcas_duplicate_post', function () {
         }
     }
 
-    // 4) ALLE meta 1-op-1 kopiëren op DB-niveau (voorkomt serialize/slash issues)
+    // 4) Meta kopiëren op DB-niveau (veilig voor Elementor data)
     global $wpdb;
     $meta_table = $wpdb->postmeta;
 
-    // Keys die we bewust NIET klonen
     $skip_keys = [
         '_edit_lock',
         '_edit_last',
         '_wp_old_slug',
-        // Eventueel: '_thumbnail_id' (maar we hebben die hierboven al gezet)
+        '_thumbnail_id', // reeds gezet
     ];
 
-    // Haal alle meta-rows van de bron op (exact zoals in DB)
     $rows = $wpdb->get_results(
         $wpdb->prepare("SELECT meta_key, meta_value FROM {$meta_table} WHERE post_id = %d", $post_id),
         ARRAY_A
@@ -151,21 +128,14 @@ add_action('admin_action_devcas_duplicate_post', function () {
 
     if ($rows) {
         foreach ($rows as $row) {
-            $key = $row['meta_key'];
-            if (in_array($key, $skip_keys, true)) {
+            if (in_array($row['meta_key'], $skip_keys, true)) {
                 continue;
             }
-            // _thumbnail_id laten we overslaan, want die is net al correct gezet
-            if ($key === '_thumbnail_id') {
-                continue;
-            }
-
-            // Insert exact zoals opgeslagen (geen (un)serialize/slash/encoding uitvoeren!)
             $wpdb->insert(
                 $meta_table,
                 [
                     'post_id'    => $new_post_id,
-                    'meta_key'   => $key,
+                    'meta_key'   => $row['meta_key'],
                     'meta_value' => $row['meta_value'],
                 ],
                 ['%d','%s','%s']
@@ -173,20 +143,16 @@ add_action('admin_action_devcas_duplicate_post', function () {
         }
     }
 
-    // Zorg dat Elementor edit mode er is als de bron Elementor gebruikte
+    // 5) Elementor flags corrigeren indien nodig
     $src_elementor_data = get_post_meta($post_id, '_elementor_data', true);
     if (!empty($src_elementor_data)) {
-        // Als _elementor_edit_mode ontbreekt, forceer 'builder'
         $edit_mode = get_post_meta($new_post_id, '_elementor_edit_mode', true);
         if (!$edit_mode) {
             update_post_meta($new_post_id, '_elementor_edit_mode', 'builder');
         }
     }
 
-    // 5) GEEN attachments herparenten (anders problemen bij het origineel)
-    // Media blijven via URLs refereren.
-
-    // 6) Elementor CSS regenereren (als Elementor actief is)
+    // 6) Elementor CSS regenereren
     if (class_exists('\Elementor\Core\Files\CSS\Post')) {
         try { \Elementor\Core\Files\CSS\Post::create($new_post_id)->update(); } catch (\Throwable $e) {}
     }
@@ -194,7 +160,7 @@ add_action('admin_action_devcas_duplicate_post', function () {
         try { \Elementor\Plugin::$instance->files_manager->clear_cache(); } catch (\Throwable $e) {}
     }
 
-    // 7) Naar de editor van de kopie
+    // 7) Naar de editor van de nieuwe kopie
     wp_redirect(admin_url('post.php?action=edit&post=' . $new_post_id));
     exit;
 });
