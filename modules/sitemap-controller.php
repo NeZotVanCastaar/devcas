@@ -2,9 +2,9 @@
 
 /**
  * Plugin Name: Custom Sitemap & Breadcrumb Controller
- * Description: Beheer sitemap-inhoud, sorteervolgorde, noindex-logica en nette JSON-LD breadcrumbs.
+ * Description: Beheer sitemap-inhoud, sorteervolgorde, noindex-logica en nette JSON-LD breadcrumbs. Taxonomie-sitemaps zijn standaard uitgeschakeld.
  * Author: Alec Meganck
- * Version: 1.0.0
+ * Version: 1.0.1
  */
 
 /* -----------------------------------------------------
@@ -91,12 +91,6 @@ add_action('admin_init', function () {
         }
     ]);
 
-    register_setting('custom_sitemap_settings', 'custom_sitemap_enabled_taxonomies', [
-        'sanitize_callback' => function ($input) {
-            return is_array($input) ? array_map('sanitize_text_field', $input) : [];
-        }
-    ]);
-
     register_setting('custom_sitemap_settings', 'custom_sitemap_orderby', [
         'sanitize_callback' => function ($input) {
             $allowed = ['modified', 'date', 'title', 'menu_order'];
@@ -117,7 +111,7 @@ add_action('admin_init', function () {
         'sitemap_section',
         'Wat wil je tonen in de sitemap?',
         function () {
-            echo '<p>Selecteer de post types en taxonomieën die je wil opnemen in de XML-sitemap van WordPress.</p>';
+            echo '<p>Selecteer de post types die je wil opnemen in de XML-sitemap van WordPress. (Taxonomieën zijn standaard uitgeschakeld)</p>';
         },
         'custom-sitemap-settings'
     );
@@ -131,16 +125,6 @@ add_action('admin_init', function () {
                   </label><br>';
         }
     }, 'custom-sitemap-settings', 'sitemap_section');
-
-    add_settings_field('sitemap_taxonomies', 'Taxonomieën', function () {
-        $enabled = (array) get_option('custom_sitemap_enabled_taxonomies', []);
-        foreach (get_taxonomies(['public' => true], 'objects') as $slug => $tax) {
-            echo '<label style="display:inline-block;margin:2px 0;">
-                    <input type="checkbox" name="custom_sitemap_enabled_taxonomies[]" value="' . esc_attr($slug) . '" ' . checked(in_array($slug, $enabled, true), true, false) . '>
-                    ' . esc_html($tax->labels->name) . '
-                  </label><br>';
-        }
-    }, 'custom-sitemap-settings', 'sitemap_section');
 });
 
 
@@ -148,28 +132,24 @@ add_action('admin_init', function () {
  *  SITEMAP FILTERS
  * ---------------------------------------------------*/
 
-/**
- * Alleen filteren als er keuzes zijn gemaakt; anders alles laten staan.
- */
+// Alleen tonen wat geselecteerd is
 add_filter('wp_sitemaps_post_types', function ($post_types) {
     $allowed = array_filter((array) get_option('custom_sitemap_enabled_post_types', []));
     return $allowed ? array_intersect_key($post_types, array_flip($allowed)) : $post_types;
 });
 
-add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
-    $allowed = array_filter((array) get_option('custom_sitemap_enabled_taxonomies', []));
-    return $allowed ? array_intersect_key($taxonomies, array_flip($allowed)) : $taxonomies;
-});
+// ❌ Taxonomie-sitemaps volledig uitschakelen
+add_filter('wp_sitemaps_add_provider', function ($provider, $name) {
+    if ($name === 'taxonomies') return false;
+    return $provider;
+}, 10, 2);
 
-/**
- * Query-args per post type – volgorde uit settings + speciale behandeling voor pages.
- */
+// Sorteer per type
 add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
     $opt_orderby = get_option('custom_sitemap_orderby', 'modified');
     $opt_order   = get_option('custom_sitemap_order', 'DESC');
 
     if ($post_type === 'page') {
-        // Pagina’s: gebruik menustructuur
         $args['orderby'] = 'menu_order title';
         $args['order']   = 'ASC';
     } else {
@@ -177,19 +157,18 @@ add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
         $args['order']   = $args['order']   ?? $opt_order;
     }
 
-    // WPML
+    // WPML / Polylang compatibiliteit
     if (function_exists('apply_filters') && has_filter('wpml_current_language')) {
         $current_lang = apply_filters('wpml_current_language', null);
         if (!$current_lang && function_exists('wpml_get_default_language')) {
             $current_lang = wpml_get_default_language();
         }
         if ($current_lang) $args['lang'] = $current_lang;
-        // Polylang
     } elseif (function_exists('pll_current_language')) {
         $args['lang'] = pll_current_language('slug');
     }
 
-    // Noindex uitsluiten (_seo_noindex != 1)
+    // Noindex uitsluiten
     $meta_query   = isset($args['meta_query']) ? (array) $args['meta_query'] : [];
     $meta_query[] = [
         'relation' => 'OR',
@@ -203,17 +182,15 @@ add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
 
 
 /* -----------------------------------------------------
- *  NOINDEX META – VOOR CONTENT DIE NIET IN SITEMAP HOORT
+ *  NOINDEX META – VOOR UITGESLOTEN PAGINA'S
  * ---------------------------------------------------*/
 
 add_action('wp_head', function () {
-    // Altijd noindex voor zoekresultaten en 404-pagina's
     if (is_search() || is_404()) {
         echo '<meta name="robots" content="noindex, follow">' . "\n";
         return;
     }
 
-    // Singular contentregels
     if (is_singular()) {
         global $post;
         if (!$post) return;
@@ -221,20 +198,18 @@ add_action('wp_head', function () {
         $post_type          = get_post_type($post);
         $allowed_post_types = (array) get_option('custom_sitemap_enabled_post_types', []);
 
-        // 1) Post type niet toegestaan
         if ($allowed_post_types && !in_array($post_type, $allowed_post_types, true)) {
             echo '<meta name="robots" content="noindex, follow">' . "\n";
             return;
         }
 
-        // 2) Handmatig op noindex gezet
         $manual_noindex = get_post_meta($post->ID, '_seo_noindex', true);
         if ($manual_noindex === '1') {
             echo '<meta name="robots" content="noindex, follow">' . "\n";
             return;
         }
 
-        // 3) Niet in huidige taal (WPML)
+        // WPML check
         if (function_exists('apply_filters') && has_filter('wpml_current_language')) {
             $current_lang = apply_filters('wpml_current_language', null);
             if (!$current_lang && function_exists('wpml_get_default_language')) {
@@ -249,15 +224,6 @@ add_action('wp_head', function () {
             }
         }
     }
-
-    // Taxonomie-archieven
-    if (is_tax() || is_category() || is_tag()) {
-        $taxonomy            = get_queried_object()->taxonomy ?? null;
-        $allowed_taxonomies  = (array) get_option('custom_sitemap_enabled_taxonomies', []);
-        if ($taxonomy && $allowed_taxonomies && !in_array($taxonomy, $allowed_taxonomies, true)) {
-            echo '<meta name="robots" content="noindex, follow">' . "\n";
-        }
-    }
 }, 5);
 
 
@@ -266,70 +232,52 @@ add_action('wp_head', function () {
  * ---------------------------------------------------*/
 
 add_action('wp_head', function () {
-    // Pagina's of enkelvoudige berichten/CPT
     if (!is_page() && !is_singular()) return;
 
-    // HOME: één item is genoeg
-    if (is_front_page()) {
-        $items = [[
-            '@type'    => 'ListItem',
-            'position' => 1,
-            'name'     => 'Home',
-            'item'     => ['@type' => 'WebPage', '@id' => trailingslashit(home_url('/'))],
-        ]];
-    } else {
-        $items = [[
-            '@type'    => 'ListItem',
-            'position' => 1,
-            'name'     => 'Home',
-            'item'     => ['@type' => 'WebPage', '@id' => trailingslashit(home_url('/'))],
-        ]];
+    $items = [[
+        '@type'    => 'ListItem',
+        'position' => 1,
+        'name'     => 'Home',
+        'item'     => ['@type' => 'WebPage', '@id' => trailingslashit(home_url('/'))],
+    ]];
 
-        if (is_page()) {
-            global $post;
-            $ancestors = array_reverse(get_post_ancestors($post->ID));
-            $pos = 2;
-            foreach ($ancestors as $aid) {
-                $items[] = [
-                    '@type'    => 'ListItem',
-                    'position' => $pos++,
-                    'name'     => get_the_title($aid),
-                    'item'     => ['@type' => 'WebPage', '@id' => get_permalink($aid)],
-                ];
-            }
-            $items[] = [
-                '@type'    => 'ListItem',
-                'position' => count($items) + 1,
-                'name'     => get_the_title($post->ID),
-                'item'     => ['@type' => 'WebPage', '@id' => get_permalink($post->ID)],
-            ];
-        } elseif (is_singular()) {
-            $pos = 2;
-            $pt  = get_post_type_object(get_post_type());
-            if ($pt && !is_post_type_hierarchical($pt->name)) {
-                if (!empty($pt->has_archive)) {
-                    $items[] = [
-                        '@type'    => 'ListItem',
-                        'position' => $pos++,
-                        'name'     => $pt->labels->name,
-                        'item'     => ['@type' => 'WebPage', '@id' => get_post_type_archive_link($pt->name)],
-                    ];
-                } else {
-                    $items[] = [
-                        '@type'    => 'ListItem',
-                        'position' => $pos++,
-                        'name'     => $pt->labels->name,
-                        'item'     => ['@type' => 'WebPage', '@id' => trailingslashit(home_url('/'))],
-                    ];
-                }
-            }
+    if (is_page()) {
+        global $post;
+        $ancestors = array_reverse(get_post_ancestors($post->ID));
+        $pos = 2;
+        foreach ($ancestors as $aid) {
             $items[] = [
                 '@type'    => 'ListItem',
                 'position' => $pos++,
-                'name'     => get_the_title(),
-                'item'     => ['@type' => 'WebPage', '@id' => get_permalink()],
+                'name'     => get_the_title($aid),
+                'item'     => ['@type' => 'WebPage', '@id' => get_permalink($aid)],
             ];
         }
+        $items[] = [
+            '@type'    => 'ListItem',
+            'position' => count($items) + 1,
+            'name'     => get_the_title($post->ID),
+            'item'     => ['@type' => 'WebPage', '@id' => get_permalink($post->ID)],
+        ];
+    } elseif (is_singular()) {
+        $pos = 2;
+        $pt  = get_post_type_object(get_post_type());
+        if ($pt && !is_post_type_hierarchical($pt->name)) {
+            if (!empty($pt->has_archive)) {
+                $items[] = [
+                    '@type'    => 'ListItem',
+                    'position' => $pos++,
+                    'name'     => $pt->labels->name,
+                    'item'     => ['@type' => 'WebPage', '@id' => get_post_type_archive_link($pt->name)],
+                ];
+            }
+        }
+        $items[] = [
+            '@type'    => 'ListItem',
+            'position' => $pos++,
+            'name'     => get_the_title(),
+            'item'     => ['@type' => 'WebPage', '@id' => get_permalink()],
+        ];
     }
 
     $data = [

@@ -3,7 +3,7 @@
     Plugin Name: DevCas
     Plugin URI: https://github.com/NeZotVanCastaar/devcas
     Description: Een verzameling handige SEO-tools, bulk editors en custom functionaliteit.
-    Version: 1.1.0
+    Version: 1.1.1
     Author: Castaar – Alec Meganck & Robbe Cooman
     Author URI: https://castaar.com
 */
@@ -15,6 +15,7 @@ const DEVCAS_OPTION = 'devcas_enabled_modules';
 
 // ------------- Plugin Update Checker -------------
 require plugin_dir_path(__FILE__) . 'plugin-update-checker/plugin-update-checker.php';
+
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $updateChecker = PucFactory::buildUpdateChecker(
@@ -28,7 +29,8 @@ $updateChecker->setBranch('main');
 /**
  * Vind alle modulebestanden in /modules en geef [slug => [label, file]] terug.
  */
-function devcas_get_modules(): array {
+function devcas_get_modules(): array
+{
     $dir   = plugin_dir_path(__FILE__) . 'modules/';
     $files = glob($dir . '*.php') ?: [];
     $mods  = [];
@@ -49,7 +51,8 @@ function devcas_get_modules(): array {
  * Geef de huidige geselecteerde modules (slugs) terug.
  * Als er geen optie is opgeslagen, interpreteren we dat als "alles actief" (backwards compatible).
  */
-function devcas_selected_modules(): array {
+function devcas_selected_modules(): array
+{
     $saved = get_option(DEVCAS_OPTION, null);
     if ($saved === null) {
         // Geen keuze gemaakt → alles actief
@@ -118,9 +121,10 @@ add_action('admin_init', function () {
     }, 'devcas-modules', 'devcas_section');
 });
 
-function devcas_render_settings_page() {
+function devcas_render_settings_page()
+{
     if (!current_user_can('manage_options')) return;
-    ?>
+?>
     <div class="wrap">
         <h1>DEVCAS Modules</h1>
         <form method="post" action="options.php">
@@ -131,12 +135,12 @@ function devcas_render_settings_page() {
             ?>
         </form>
     </div>
-    <?php
+<?php
 }
 
 
- register_activation_hook(__FILE__, function () {
-     if (get_option(DEVCAS_OPTION, null) === null) {
-         update_option(DEVCAS_OPTION, array_keys(devcas_get_modules()));
-     }
- });
+register_activation_hook(__FILE__, function () {
+    if (get_option(DEVCAS_OPTION, null) === null) {
+        update_option(DEVCAS_OPTION, array_keys(devcas_get_modules()));
+    }
+});
