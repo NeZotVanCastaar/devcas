@@ -5,15 +5,34 @@ if (!defined('ABSPATH')) exit;
 //   CONSTANTS & HELPERS
 // ============================
 
-const CASTAAR_SEO_OPT = 'castaar_seo_enabled_post_types';
+const CASTAAR_SEO_OPT   = 'castaar_seo_enabled_post_types';
+const CASTAAR_SEO_ROLES = 'castaar_seo_allowed_roles'; // nieuw: wie mag SEO-metabox/kolom zien
+
+/**
+ * Huidige gebruiker: mag die de SEO-metabox/kolom zien en opslaan?
+ * Bepaald via rollen (default: alleen administrator).
+ */
+function castaar_seo_user_can_edit(): bool {
+    if (!is_user_logged_in()) return false;
+    $allowed = get_option(CASTAAR_SEO_ROLES, null);
+
+    // Fallback: alleen administrators als er nog niets ingesteld is
+    if (!is_array($allowed) || empty($allowed)) {
+        $allowed = ['administrator'];
+    }
+
+    $user = wp_get_current_user();
+    if (empty($user->roles)) return false;
+
+    return (bool) array_intersect($user->roles, $allowed);
+}
 
 /**
  * Haal lijst van geactiveerde post types op. Valt terug op alle publieke post types.
- * Alleen beschikbaar voor admins (manage_options).
+ * Alleen laden voor gebruikers die de metabox mogen zien.
  */
 function castaar_seo_get_enabled_post_types() {
-    if (!current_user_can('manage_options')) {
-        // Voor niet-admins registreren/tonen we niets
+    if (!castaar_seo_user_can_edit()) {
         return [];
     }
     $enabled = get_option(CASTAAR_SEO_OPT);
@@ -28,12 +47,15 @@ function castaar_seo_get_enabled_post_types() {
 
 /**
  * Fallback default: zet standaard alle publieke post types aan
- * (Gebruik dit in modules, omdat register_activation_hook in modules niet altijd vuurt)
+ * En zet standaard toegestane rol op administrator
  */
 add_action('admin_init', function () {
     if (get_option(CASTAAR_SEO_OPT, null) === null) {
         $all = get_post_types(['public' => true], 'names');
         update_option(CASTAAR_SEO_OPT, array_values($all));
+    }
+    if (get_option(CASTAAR_SEO_ROLES, null) === null) {
+        update_option(CASTAAR_SEO_ROLES, ['administrator']);
     }
 });
 
@@ -42,6 +64,7 @@ add_action('admin_init', function () {
 // ============================
 
 add_action('admin_menu', function () {
+    // Alleen admins mogen de instellingen wijzigen
     if (!current_user_can('manage_options')) return;
 
     add_submenu_page(
@@ -59,17 +82,16 @@ function castaar_seo_render_settings_page() {
 
     // Opslag
     if (isset($_POST['castaar_seo_nonce']) && wp_verify_nonce($_POST['castaar_seo_nonce'], 'castaar_seo_save')) {
-        $posted    = isset($_POST['castaar_seo_post_types']) ? (array) $_POST['castaar_seo_post_types'] : [];
+        // Post types
+        $postedPT  = isset($_POST['castaar_seo_post_types']) ? (array) $_POST['castaar_seo_post_types'] : [];
         $sanitized = [];
-
         $public_pt = get_post_types(['public' => true], 'names');
-        foreach ($posted as $pt) {
+        foreach ($postedPT as $pt) {
             $pt = sanitize_key($pt);
             if (isset($public_pt[$pt]) || in_array($pt, $public_pt, true)) {
                 $sanitized[] = $pt;
             }
         }
-
         if (empty($sanitized)) {
             // Leeg laten = fallback naar "alles aan"
             delete_option(CASTAAR_SEO_OPT);
@@ -77,21 +99,41 @@ function castaar_seo_render_settings_page() {
             update_option(CASTAAR_SEO_OPT, array_values(array_unique($sanitized)));
         }
 
+        // Rollen
+        $postedRoles  = isset($_POST['castaar_seo_roles']) ? (array) $_POST['castaar_seo_roles'] : [];
+        $editable     = get_editable_roles();
+        $roles_clean  = [];
+        foreach ($postedRoles as $r) {
+            $r = sanitize_key($r);
+            if (isset($editable[$r])) $roles_clean[] = $r;
+        }
+        if (empty($roles_clean)) {
+            // Fallback: administrator
+            update_option(CASTAAR_SEO_ROLES, ['administrator']);
+        } else {
+            update_option(CASTAAR_SEO_ROLES, array_values(array_unique($roles_clean)));
+        }
+
         echo '<div class="notice notice-success is-dismissible"><p>Instellingen bewaard.</p></div>';
     }
 
-    $current_enabled = castaar_seo_get_enabled_post_types();
-    $public_types    = get_post_types(['public' => true], 'objects');
+    $current_enabled = get_option(CASTAAR_SEO_OPT, []);
+    if (empty($current_enabled)) {
+        $current_enabled = get_post_types(['public' => true], 'names'); // fallback UI
+    }
+    $public_types   = get_post_types(['public' => true], 'objects');
+    $allowed_roles  = (array) get_option(CASTAAR_SEO_ROLES, ['administrator']);
+    $editable_roles = get_editable_roles();
     ?>
     <div class="wrap">
         <h1>Castaar SEO – Instellingen</h1>
-        <p>Kies voor welke <strong>post types</strong> de Castaar SEO-metabox en SEO-kolom zichtbaar mogen zijn.
-           <br><em>Laat alles uitgevinkt om alles te tonen (standaard).</em></p>
+        <p>Kies voor welke <strong>post types</strong> de Castaar SEO-metabox en SEO-kolom zichtbaar mogen zijn.</p>
 
         <form method="post">
             <?php wp_nonce_field('castaar_seo_save', 'castaar_seo_nonce'); ?>
 
-            <table class="widefat striped" style="max-width:820px;margin-top:15px;">
+            <h2 class="title">Zichtbare post types</h2>
+            <table class="widefat striped" style="max-width:820px;margin-top:10px;">
                 <thead>
                     <tr>
                         <th style="width:80px;">Actief</th>
@@ -115,9 +157,20 @@ function castaar_seo_render_settings_page() {
                 </tbody>
             </table>
 
-            <p style="margin-top:15px;">
+            <h2 class="title" style="margin-top:24px;">Toegang: wie mag de SEO-velden zien/bewerken?</h2>
+            <p>Selecteer één of meerdere <strong>rollen</strong>. Deze gebruikers zien de metabox, checklist/score en kolom, en mogen de waarden opslaan.</p>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;max-width:820px;">
+                <?php foreach ($editable_roles as $role_key => $role_obj): ?>
+                    <label style="display:inline-block;min-width:220px;">
+                        <input type="checkbox" name="castaar_seo_roles[]" value="<?php echo esc_attr($role_key); ?>"
+                            <?php checked(in_array($role_key, $allowed_roles, true)); ?>>
+                        <?php echo esc_html($role_obj['name']); ?> <code><?php echo esc_html($role_key); ?></code>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+
+            <p style="margin-top:18px;">
                 <button type="submit" class="button button-primary">Bewaar</button>
-                <a href="<?php echo esc_url(admin_url('edit.php')); ?>" class="button">Terug</a>
             </p>
         </form>
     </div>
@@ -129,8 +182,7 @@ function castaar_seo_render_settings_page() {
 // ============================
 
 add_action('add_meta_boxes', function() {
-    // Alleen tonen voor admins
-    if (!current_user_can('manage_options')) return;
+    if (!castaar_seo_user_can_edit()) return;
 
     $post_types = castaar_seo_get_enabled_post_types();
     foreach ($post_types as $post_type) {
@@ -449,9 +501,8 @@ add_action('save_post', function($post_id) {
     if (!isset($_POST['page_meta_tags_nonce']) || !wp_verify_nonce($_POST['page_meta_tags_nonce'], 'save_page_meta_tags')) {
         return;
     }
-
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
-    if (!current_user_can('manage_options')) return;
+    if (!castaar_seo_user_can_edit()) return;
 
     update_post_meta($post_id, '_custom_meta_title', sanitize_text_field($_POST['custom_meta_title'] ?? ''));
     update_post_meta($post_id, '_custom_meta_description', sanitize_textarea_field($_POST['custom_meta_description'] ?? ''));
@@ -470,7 +521,7 @@ add_action('save_post', function($post_id) {
 // ============================
 
 add_action('admin_init', function() {
-    if (!current_user_can('manage_options')) return;
+    if (!castaar_seo_user_can_edit()) return;
 
     $post_types = castaar_seo_get_enabled_post_types();
     foreach ($post_types as $post_type) {
