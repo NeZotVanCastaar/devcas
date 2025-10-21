@@ -1,36 +1,42 @@
 <?php
-
 defined('ABSPATH') || exit;
 
-add_action('admin_menu', function() {
-     if (!current_user_can('administrator')) return;
+// Onder CASTAAR submenu (admin-only)
+add_action('admin_menu', function () {
+    if (!current_user_can('manage_options')) return; // 🔒 enkel admins
     add_submenu_page(
-        'tools.php',
-        'SEO Import (RM, Yoast, AIO)',
-        'Importeer SEO Data',
-        'manage_options',
-        'import-seo-data',
-        'devcas_import_seo_page'
+        'castaar',                         // parent: CASTAAR
+        'SEO Import (RM, Yoast, AIO)',     // page title
+        'Importeer SEO Data',              // menu title
+        'manage_options',                  // capability
+        'import-seo-data',                 // slug
+        'devcas_import_seo_page'           // callback
     );
 });
 
 function devcas_import_seo_page() {
-    if (isset($_POST['seo_import']) && check_admin_referer('import_seo_action')) {
+    if (!current_user_can('manage_options')) {
+        wp_die('Geen toegang.');
+    }
+
+    if (!empty($_POST['seo_import']) && check_admin_referer('import_seo_action')) {
         $updated = 0;
 
         $posts = get_posts([
-            'post_type' => get_post_types(['public' => true]),
+            'post_type'   => get_post_types(['public' => true]),
             'post_status' => ['publish', 'draft'],
             'numberposts' => -1,
         ]);
 
         foreach ($posts as $post) {
-            $id = $post->ID;
+            $id       = (int) $post->ID;
             $imported = false;
+            $aioseo   = null; // ✅ reset per iteratie
 
             // Meta title
             $meta_title = '';
             $rank_title = get_post_meta($id, 'rank_math_title', true);
+
             if ($rank_title) {
                 $post_title = get_the_title($id);
                 $site_name  = get_bloginfo('name');
@@ -75,16 +81,12 @@ function devcas_import_seo_page() {
             // Focus keyword(s)
             $rank_kw = get_post_meta($id, 'rank_math_focus_keyword', true);
             $yoast_kw = get_post_meta($id, '_yoast_wpseo_focuskw', true);
-            $aio_kw = null;
             if (!isset($aioseo)) {
                 $aioseo = get_post_meta($id, '_aioseo_meta', true);
             }
-            if (is_array($aioseo) && !empty($aioseo['focuskw'])) {
-                $aio_kw = $aioseo['focuskw'];
-            }
+            $aio_kw = (is_array($aioseo) && !empty($aioseo['focuskw'])) ? $aioseo['focuskw'] : null;
 
             $keywords = $rank_kw ?: $yoast_kw ?: $aio_kw;
-
             $kw_array = [];
 
             if (is_array($keywords)) {
@@ -104,7 +106,7 @@ function devcas_import_seo_page() {
             if ($imported) $updated++;
         }
 
-        echo '<div class="updated notice"><p><strong>' . $updated . ' posts/pagina’s zijn geüpdatet met SEO data.</strong></p></div>';
+        echo '<div class="updated notice"><p><strong>' . esc_html($updated) . ' posts/pagina’s zijn geüpdatet met SEO data.</strong></p></div>';
     }
 
     echo '<div class="wrap"><h1>Importeer SEO Data (Rank Math, Yoast, AIO)</h1>';

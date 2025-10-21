@@ -1,23 +1,39 @@
 <?php
-
-
 defined('ABSPATH') || exit;
 
-// Verberg conceptpagina's uit het WP menu
+// Verberg conceptpagina's uit het WP menu (alleen published)
 add_filter('wp_get_nav_menu_items', function($items) {
-    return array_filter($items, function($item) {
-        return get_post_status($item->object_id) !== 'draft';
-    });
+    return array_values(array_filter((array)$items, function($item) {
+        if (!is_object($item)) return false;
+        $status = get_post_status((int)$item->object_id);
+        return $status !== 'draft';
+    }));
 });
 
-// Voeg meta box toe om hoofdpagina te selecteren
+// Voeg meta box toe om hoofdpagina te selecteren (voor het juiste CPT)
 add_action('add_meta_boxes', function() {
-    add_meta_box('cpt_head_page', 'Koppel hoofdpagina', 'render_cpt_head_page_box', 'your_cpt_slug', 'side', 'default');
+    add_meta_box(
+        'cpt_head_page',
+        'Koppel hoofdpagina',
+        'render_cpt_head_page_box',
+        'your_cpt_slug', // <- vervang door je echte CPT
+        'side',
+        'default'
+    );
 });
 
 function render_cpt_head_page_box($post) {
+    // Cap check + nonce
+    if (!current_user_can('edit_post', $post->ID)) {
+        echo '<p>Geen toegang.</p>';
+        return;
+    }
+
     $selected = get_post_meta($post->ID, '_linked_head_page', true);
-    $pages = get_pages(['post_status' => ['publish']]);
+    $pages    = get_pages(['post_status' => ['publish']]);
+
+    wp_nonce_field('linked_head_page_save', 'linked_head_page_nonce');
+
     echo '<select name="linked_head_page" style="width:100%">';
     echo '<option value="">— Geen —</option>';
     foreach ($pages as $page) {
@@ -26,11 +42,15 @@ function render_cpt_head_page_box($post) {
     echo '</select>';
 }
 
-// Opslaan gekoppelde hoofdpagina
+// Opslaan gekoppelde hoofdpagina (met nonce)
 add_action('save_post', function($post_id) {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
-    if (isset($_POST['linked_head_page'])) {
-        update_post_meta($post_id, '_linked_head_page', intval($_POST['linked_head_page']));
+    if (wp_is_post_revision($post_id)) return;
+
+    if (isset($_POST['linked_head_page_nonce']) && wp_verify_nonce($_POST['linked_head_page_nonce'], 'linked_head_page_save')) {
+        if (isset($_POST['linked_head_page'])) {
+            update_post_meta($post_id, '_linked_head_page', intval($_POST['linked_head_page']));
+        }
     }
 });
 
@@ -39,16 +59,15 @@ add_filter('nav_menu_css_class', function($classes, $item) {
     if (!is_singular('your_cpt_slug')) return $classes;
 
     $linked = get_post_meta(get_the_ID(), '_linked_head_page', true);
-    if ($linked && $item->object_id == $linked) {
+    if ($linked && (int)$item->object_id === (int)$linked) {
         $classes[] = 'current-menu-item';
     }
-
     return $classes;
 }, 10, 2);
 
-// CSS laden
+// CSS laden (fix pad)
 add_action('wp_enqueue_scripts', function() {
-    wp_enqueue_style('devcas-default-style', plugin_dir_url(__FILE__) . '../assets/style.css');
+    wp_enqueue_style('devcas-default-style', plugins_url('assets/style.css', __FILE__), [], null);
 });
 
 // "Dupliceren" link in de lijstacties (Posts & Pagina's)
@@ -56,7 +75,7 @@ add_filter('post_row_actions', 'devcas_duplicate_link', 10, 2);
 add_filter('page_row_actions', 'devcas_duplicate_link', 10, 2);
 
 function devcas_duplicate_link($actions, $post) {
-    if (current_user_can('edit_posts') && in_array($post->post_status, ['publish','private','pending','draft'], true)) {
+    if (current_user_can('edit_post', $post->ID) && in_array($post->post_status, ['publish','private','pending','draft'], true)) {
         $url = wp_nonce_url(
             admin_url('admin.php?action=devcas_duplicate_post&post=' . $post->ID),
             basename(__FILE__),
@@ -71,7 +90,6 @@ function devcas_duplicate_link($actions, $post) {
 add_action('admin_action_devcas_duplicate_post', function () {
     if (
         empty($_GET['post']) ||
-        !current_user_can('edit_posts') ||
         empty($_GET['duplicate_nonce']) ||
         !wp_verify_nonce($_GET['duplicate_nonce'], basename(__FILE__))
     ) {
@@ -79,7 +97,9 @@ add_action('admin_action_devcas_duplicate_post', function () {
     }
 
     $post_id = absint($_GET['post']);
-    $post    = get_post($post_id);
+    if (!current_user_can('edit_post', $post_id)) wp_die('Geen toegang.');
+
+    $post = get_post($post_id);
     if (!$post) wp_die('Bericht niet gevonden.');
 
     // 1) Nieuwe post aanmaken (WP zorgt zelf voor unieke slug)
@@ -128,9 +148,7 @@ add_action('admin_action_devcas_duplicate_post', function () {
 
     if ($rows) {
         foreach ($rows as $row) {
-            if (in_array($row['meta_key'], $skip_keys, true)) {
-                continue;
-            }
+            if (in_array($row['meta_key'], $skip_keys, true)) continue;
             $wpdb->insert(
                 $meta_table,
                 [
@@ -165,8 +183,6 @@ add_action('admin_action_devcas_duplicate_post', function () {
     exit;
 });
 
-
-
 // SVG's toelaten in mediabibliotheek
 add_filter('upload_mimes', function($mimes) {
     $mimes['svg'] = 'image/svg+xml';
@@ -176,52 +192,41 @@ add_filter('upload_mimes', function($mimes) {
 // SVG veilig tonen in media weergave
 add_filter('wp_check_filetype_and_ext', function($data, $file, $filename, $mimes) {
     $ext = pathinfo($filename, PATHINFO_EXTENSION);
-    if ($ext === 'svg') {
+    if (strtolower($ext) === 'svg') {
         $data['ext']  = 'svg';
         $data['type'] = 'image/svg+xml';
     }
     return $data;
 }, 10, 4);
 
-
-// AOS scripts en styles laden
+// AOS scripts en styles laden (frontend)
 add_action('wp_enqueue_scripts', function() {
-    // CSS eerst
     wp_enqueue_style('aos-css', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css', [], '2.3.4');
-
-    // JS met handle zodat we inline script erna kunnen injecteren
     wp_enqueue_script('aos-js', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.js', [], '2.3.4', true);
-
-    // Voeg AOS.init toe nadat het script geladen is
-    wp_add_inline_script('aos-js', 'document.addEventListener("DOMContentLoaded", function() {
-        AOS.init({
-            duration: 1000 // animaties duren 1000ms
-        });
-    });');
+    wp_add_inline_script('aos-js', 'document.addEventListener("DOMContentLoaded", function(){ AOS.init({ duration: 1000 }); });');
 });
 
 /**
  * Remove "-scaled" from image filenames while keeping scaling active
  */
 add_filter('wp_unique_filename', function ($filename, $ext, $dir) {
-    // Remove '-scaled' from filenames
-    $filename = str_replace('-scaled', '', $filename);
-    return $filename;
+    return str_replace('-scaled', '', $filename);
 }, 10, 3);
 
-function shortcode_year() {
-    return date('Y');
-}
+// [year] shortcode
+function shortcode_year() { return date('Y'); }
 add_shortcode('year', 'shortcode_year');
 
+// In admin-lijsten standaard enkel 'publish' tonen (🔒 alleen voor admins)
 function show_only_published_everywhere_in_admin($query) {
     if (
-      is_admin() &&
-      $query->is_main_query() &&
-      !isset($_GET['post_status']) &&
-      $query->get('post_type')
+        is_admin() &&
+        $query->is_main_query() &&
+        !isset($_GET['post_status']) &&
+        $query->get('post_type') &&
+        current_user_can('manage_options') // gate: enkel admins
     ) {
-      $query->set('post_status', 'publish');
+        $query->set('post_status', 'publish');
     }
-  }
-  add_action('pre_get_posts', 'show_only_published_everywhere_in_admin');
+}
+add_action('pre_get_posts', 'show_only_published_everywhere_in_admin');

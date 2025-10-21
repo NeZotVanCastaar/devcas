@@ -1,24 +1,20 @@
 <?php
 
-/**
- * Plugin Name: Custom Sitemap & Breadcrumb Controller
- * Description: Beheer sitemap-inhoud, sorteervolgorde, noindex-logica en nette JSON-LD breadcrumbs. Taxonomie-sitemaps zijn standaard uitgeschakeld.
- * Author: Alec Meganck
- * Version: 1.0.1
- */
-
 /* -----------------------------------------------------
- *  ADMIN UI – SITEMAP INSTELLINGEN
+ *  ADMIN UI – SITEMAP INSTELLINGEN (onder CASTAAR)
  * ---------------------------------------------------*/
 
 add_action('admin_menu', function () {
     if (!current_user_can('administrator')) return;
-    add_options_page(
-        'Sitemap-instellingen',
-        'Sitemap-instellingen',
-        'manage_options',
-        'custom-sitemap-settings',
-        'render_sitemap_settings_page'
+
+    // Zet de pagina onder het CASTAAR top-level menu
+    add_submenu_page(
+        'castaar',                         // parent slug (CASTAAR)
+        'Sitemap-instellingen',            // page title
+        'Sitemap-instellingen',            // menu title
+        'manage_options',                  // capability
+        'custom-sitemap-settings',         // menu slug
+        'render_sitemap_settings_page'     // callback
     );
 });
 
@@ -73,7 +69,7 @@ function render_sitemap_settings_page()
                     <td>
                         <select name="custom_sitemap_order" id="custom_sitemap_order">
                             <option value="DESC" <?php selected($order, 'DESC'); ?>>DESC (nieuwste eerst)</option>
-                            <option value="ASC" <?php selected($order, 'ASC');  ?>>ASC (oudste/eerst alfabetisch)</option>
+                            <option value="ASC"  <?php selected($order, 'ASC');  ?>>ASC (oudste/eerst alfabetisch)</option>
                         </select>
                     </td>
                 </tr>

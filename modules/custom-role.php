@@ -1,61 +1,88 @@
 <?php
+if (!defined('ABSPATH')) exit;
 
-
-add_action('init', function () {
-    // Voeg rol toe als die nog niet bestaat
+/**
+ * Maak/werk de rol 'pagina_editor' bij.
+ * - Roep dit bij activatie aan
+ * - En fallback 1x op init als de rol ontbreekt
+ */
+function castaar_register_pagina_editor_role() {
+    // Rol aanmaken indien niet bestaat
     if (!get_role('pagina_editor')) {
         add_role('pagina_editor', 'Pagina Editor', [
-            'read' => true,
+            'read'         => true,
             'upload_files' => true,
         ]);
     }
 
     $role = get_role('pagina_editor');
+    if (!$role) return;
 
-    if ($role) {
-        // ===== PAGINA'S =====
-        $role->add_cap('edit_pages');
-        $role->add_cap('edit_others_pages');
-        $role->add_cap('edit_published_pages');
-        $role->add_cap('publish_pages');
-        $role->add_cap('delete_pages');
-        $role->add_cap('delete_others_pages');
-        $role->add_cap('delete_published_pages');
+    // ===== Basiscaps: PAGINA'S =====
+    $page_caps = [
+        'edit_pages',
+        'edit_others_pages',
+        'edit_published_pages',
+        'publish_pages',
+        'delete_pages',
+        'delete_others_pages',
+        'delete_published_pages',
+        'read', // al gezet, maar kan geen kwaad
+        'upload_files',
+    ];
+    foreach ($page_caps as $cap) { $role->add_cap($cap); }
 
-        // ===== BERICHTEN (POSTS) =====
-        $role->add_cap('edit_posts');
-        $role->add_cap('edit_others_posts');
-        $role->add_cap('edit_published_posts');
-        $role->add_cap('publish_posts');
-        $role->add_cap('delete_posts');
-        $role->add_cap('delete_others_posts');
-        $role->add_cap('delete_published_posts');
+    // ===== BERICHTEN =====
+    $post_caps = [
+        'edit_posts',
+        'edit_others_posts',
+        'edit_published_posts',
+        'publish_posts',
+        'delete_posts',
+        'delete_others_posts',
+        'delete_published_posts',
+    ];
+    foreach ($post_caps as $cap) { $role->add_cap($cap); }
 
-        // ===== CPT's =====
-        $cpts = get_post_types(['public' => true], 'names');
-        foreach ($cpts as $cpt) {
-            $role->add_cap("edit_{$cpt}");
-            $role->add_cap("edit_{$cpt}s");
-            $role->add_cap("edit_others_{$cpt}s");
-            $role->add_cap("edit_published_{$cpt}s");
-            $role->add_cap("publish_{$cpt}s");
+    // ===== CPT's: gebruik de echte caps van het post type =====
+    $cpts = get_post_types(['public' => true, 'show_ui' => true], 'objects');
+    foreach ($cpts as $cpt => $obj) {
+        // Sla 'attachment' over
+        if ($cpt === 'attachment') continue;
+        if (empty($obj->cap) || !is_object($obj->cap)) continue;
 
-            $role->add_cap("delete_{$cpt}");
-            $role->add_cap("delete_{$cpt}s");
-            $role->add_cap("delete_others_{$cpt}s");
-            $role->add_cap("delete_published_{$cpt}s");
+        // Typische relevante caps
+        $maybe_caps = [
+            'edit_post', 'read_post', 'delete_post',        // meta caps (map_meta_cap true)
+            'edit_posts', 'edit_others_posts', 'edit_published_posts',
+            'publish_posts', 'delete_posts', 'delete_others_posts', 'delete_published_posts',
+            'read', 'read_private_posts',
+        ];
 
-            $role->add_cap("read_{$cpt}");
-            $role->add_cap("read_private_{$cpt}s");
+        foreach ($maybe_caps as $key) {
+            if (!empty($obj->cap->$key)) {
+                $role->add_cap($obj->cap->$key);
+            }
         }
+    }
 
-        // ===== ELEMENTOR =====
-        $role->add_cap('edit_elementor_library');
+    // ===== Elementor =====
+    $role->add_cap('edit_elementor_library');
 
-        // ===== ELEMENTOR FORM INZENDINGEN (PRO) =====
-        $role->add_cap('read_elementor_pro_forms');
+    // ===== Elementor Pro (forms lezen) – alleen als plugin aanwezig =====
+    // (cap bestaat enkel met Elementor Pro)
+    $role->add_cap('read_elementor_pro_forms');
 
-        // ===== GOOGLE SITE KIT DASHBOARD =====
-        $role->add_cap('googlesitekit_view_dashboard');
+    // ===== Google Site Kit (dashboard view) =====
+    $role->add_cap('googlesitekit_view_dashboard');
+}
+
+/** Eenmalig bij activatie */
+register_activation_hook(__FILE__, 'castaar_register_pagina_editor_role');
+
+/** Fallback: als de rol ontbreekt (na bv. import), herstel op init */
+add_action('init', function () {
+    if (!get_role('pagina_editor')) {
+        castaar_register_pagina_editor_role();
     }
 });

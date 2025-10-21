@@ -1,28 +1,48 @@
 <?php
-
-
 if (!defined('ABSPATH')) exit;
+
+/**
+ * Snippets (mhsm_snippet) – enkel onder CASTAAR en enkel voor admins.
+ * Frontend injecties blijven werken (ook voor bezoekers), maar de UI is enkel voor admins.
+ */
 
 // ───── CPT ─────
 function mhsm_register_snippet_post_type() {
-     if (!current_user_can('administrator')) return;
     register_post_type('mhsm_snippet', [
         'labels' => [
-            'name' => 'Snippets',
-            'singular_name' => 'Snippet',
-            'add_new' => 'Snippet toevoegen',
-            'add_new_item' => 'Nieuwe snippet toevoegen',
-            'edit_item' => 'Snippet bewerken',
-            'new_item' => 'Nieuwe snippet',
-            'view_item' => 'Bekijk snippet',
-            'search_items' => 'Zoek snippets',
-            'not_found' => 'Geen snippets gevonden',
+            'name'               => 'Snippets',
+            'singular_name'      => 'Snippet',
+            'add_new'            => 'Snippet toevoegen',
+            'add_new_item'       => 'Nieuwe snippet toevoegen',
+            'edit_item'          => 'Snippet bewerken',
+            'new_item'           => 'Nieuwe snippet',
+            'view_item'          => 'Bekijk snippet',
+            'search_items'       => 'Zoek snippets',
+            'not_found'          => 'Geen snippets gevonden',
             'not_found_in_trash' => 'Geen snippets in prullenbak',
         ],
-        'public' => false,
-        'show_ui' => true,
-        'menu_icon' => 'dashicons-editor-code',
-        'supports' => ['title'],
+        'public'       => false,
+        'show_ui'      => true,                  // UI is er, maar enkel admin kan erbij via capabilities hieronder
+        'show_in_menu' => 'castaar',             // Zet onder CASTAAR-menu
+        'menu_icon'    => 'dashicons-editor-code',
+        'supports'     => ['title'],
+        // Alle beheer-acties mappen we naar manage_options -> enkel admins
+        'capabilities' => [
+            'edit_post'              => 'manage_options',
+            'read_post'              => 'manage_options',
+            'delete_post'            => 'manage_options',
+            'edit_posts'             => 'manage_options',
+            'edit_others_posts'      => 'manage_options',
+            'publish_posts'          => 'manage_options',
+            'read_private_posts'     => 'manage_options',
+            'delete_posts'           => 'manage_options',
+            'delete_private_posts'   => 'manage_options',
+            'delete_published_posts' => 'manage_options',
+            'delete_others_posts'    => 'manage_options',
+            'edit_private_posts'     => 'manage_options',
+            'edit_published_posts'   => 'manage_options',
+        ],
+        'map_meta_cap' => false,
     ]);
 }
 add_action('init', 'mhsm_register_snippet_post_type');
@@ -36,19 +56,27 @@ add_filter('manage_mhsm_snippet_posts_columns', 'mhsm_add_custom_columns');
 
 function mhsm_render_custom_columns($column, $post_id) {
     if ($column === 'mhsm_active') {
+        if (!current_user_can('manage_options')) {
+            echo '—';
+            return;
+        }
         $active = get_post_meta($post_id, '_mhsm_active', true);
-        $url = admin_url('admin-post.php?action=mhsm_toggle_active&post_id=' . $post_id . '&_wpnonce=' . wp_create_nonce('mhsm_toggle_' . $post_id));
-        $label = $active === '1' ? 'Ja' : 'Nee';
-        $color = $active === '1' ? 'green' : 'red';
-        echo '<a href="' . esc_url($url) . '" style="color:' . $color . '; font-weight:bold">' . esc_html($label) . '</a>';
+        $url    = admin_url('admin-post.php?action=mhsm_toggle_active&post_id=' . $post_id . '&_wpnonce=' . wp_create_nonce('mhsm_toggle_' . $post_id));
+        $label  = $active === '1' ? 'Ja' : 'Nee';
+        $color  = $active === '1' ? 'green' : 'red';
+        echo '<a href="' . esc_url($url) . '" style="color:' . esc_attr($color) . '; font-weight:bold">' . esc_html($label) . '</a>';
     }
 }
 add_action('manage_mhsm_snippet_posts_custom_column', 'mhsm_render_custom_columns', 10, 2);
 
 add_action('admin_post_mhsm_toggle_active', function() {
+    if (!current_user_can('manage_options')) wp_die('Geen toegang');
+
     $post_id = intval($_GET['post_id'] ?? 0);
-    if (!$post_id || !current_user_can('edit_post', $post_id)) wp_die('Geen toegang');
+    if (!$post_id) wp_die('Ongeldig ID');
+
     check_admin_referer('mhsm_toggle_' . $post_id);
+
     $current = get_post_meta($post_id, '_mhsm_active', true);
     update_post_meta($post_id, '_mhsm_active', $current === '1' ? '0' : '1');
     wp_redirect(admin_url('edit.php?post_type=mhsm_snippet'));
@@ -57,19 +85,29 @@ add_action('admin_post_mhsm_toggle_active', function() {
 
 // ───── Metaboxes ─────
 function mhsm_add_metaboxes() {
+    if (!current_user_can('manage_options')) return;
+
     add_meta_box('mhsm_code', 'Snippet Codevelden', 'mhsm_render_code_boxes', 'mhsm_snippet', 'normal', 'high');
     add_meta_box('mhsm_settings', 'Instellingen', 'mhsm_render_settings_box', 'mhsm_snippet', 'side');
 }
 add_action('add_meta_boxes', 'mhsm_add_metaboxes');
 
 function mhsm_render_code_boxes($post) {
-    $positions = ['header' => 'Header', 'body' => 'Body', 'footer' => 'Footer'];
-    $types = ['html' => 'HTML', 'css' => 'CSS', 'js' => 'JavaScript', 'php' => 'PHP'];
+    if (!current_user_can('manage_options')) {
+        echo '<p>Geen toegang.</p>';
+        return;
+    }
+
+    // Nonce voor veilige opslag
+    wp_nonce_field('mhsm_save_snippet', 'mhsm_nonce');
+
+    $positions    = ['header' => 'Header', 'body' => 'Body', 'footer' => 'Footer'];
+    $types        = ['html' => 'HTML', 'css' => 'CSS', 'js' => 'JavaScript', 'php' => 'PHP'];
     $placeholders = [
         'html' => "<!-- HTML voorbeeld -->\n<div>Hallo wereld</div>",
-        'css' => "/* CSS voorbeeld */\nbody { background: #f0f0f0; }",
-        'js' => "// JavaScript voorbeeld\nconsole.log('Hallo wereld');",
-        'php' => "// PHP voorbeeld\necho 'Hallo wereld';"
+        'css'  => "/* CSS voorbeeld */\nbody { background: #f0f0f0; }",
+        'js'   => "// JavaScript voorbeeld\nconsole.log('Hallo wereld');",
+        'php'  => "// PHP voorbeeld\necho 'Hallo wereld';"
     ];
 
     echo '<script>document.addEventListener("DOMContentLoaded", function() {
@@ -87,9 +125,9 @@ function mhsm_render_code_boxes($post) {
     });</script>';
 
     foreach ($positions as $key => $label) {
-        $code = get_post_meta($post->ID, "_mhsm_code_{$key}", true);
-        $type = get_post_meta($post->ID, "_mhsm_type_{$key}", true) ?: 'html';
-        $condition = get_post_meta($post->ID, "_mhsm_condition_{$key}", true);
+        $code       = get_post_meta($post->ID, "_mhsm_code_{$key}", true);
+        $type       = get_post_meta($post->ID, "_mhsm_type_{$key}", true) ?: 'html';
+        $condition  = get_post_meta($post->ID, "_mhsm_condition_{$key}", true);
         $placeholder = $placeholders[$type] ?? '';
 
         echo "<h4>{$label} code</h4>";
@@ -152,8 +190,11 @@ function mhsm_render_code_boxes($post) {
     </script>";
 }
 
-
 function mhsm_render_settings_box($post) {
+    if (!current_user_can('manage_options')) {
+        echo '<p>Geen toegang.</p>';
+        return;
+    }
     $active = get_post_meta($post->ID, '_mhsm_active', true);
     echo '<p><label><input type="checkbox" name="mhsm_active" value="1" ' . checked($active, '1', false) . '> Actief</label></p>';
 }
@@ -161,6 +202,12 @@ function mhsm_render_settings_box($post) {
 // ───── Save ─────
 function mhsm_save_snippet_meta($post_id) {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (!current_user_can('manage_options')) return;
+
+    // Nonce check
+    if (!isset($_POST['mhsm_nonce']) || !wp_verify_nonce($_POST['mhsm_nonce'], 'mhsm_save_snippet')) {
+        return;
+    }
 
     $positions = ['header', 'body', 'footer'];
     foreach ($positions as $pos) {
@@ -172,13 +219,15 @@ function mhsm_save_snippet_meta($post_id) {
 }
 add_action('save_post_mhsm_snippet', 'mhsm_save_snippet_meta');
 
-// ───── Injecties ─────
+// ───── Injecties (frontend) ─────
 function mhsm_output_snippets($position = 'header') {
     $snippets = get_posts([
-        'post_type' => 'mhsm_snippet',
+        'post_type'  => 'mhsm_snippet',
+        'numberposts'=> -1,
+        'post_status'=> 'any',
         'meta_query' => [
             [
-                'key' => '_mhsm_active',
+                'key'   => '_mhsm_active',
                 'value' => '1'
             ]
         ]
@@ -187,18 +236,16 @@ function mhsm_output_snippets($position = 'header') {
     global $post; // Zorg dat $post beschikbaar is binnen eval()
 
     foreach ($snippets as $snippet) {
-        $code = get_post_meta($snippet->ID, "_mhsm_code_{$position}", true);
-        $type = get_post_meta($snippet->ID, "_mhsm_type_{$position}", true);
+        $code      = get_post_meta($snippet->ID, "_mhsm_code_{$position}", true);
+        $type      = get_post_meta($snippet->ID, "_mhsm_type_{$position}", true);
         $condition = get_post_meta($snippet->ID, "_mhsm_condition_{$position}", true);
 
-        if (empty($code)) {
-            continue;
-        }
+        if (empty($code)) continue;
 
         // Conditie evaluatie (optioneel)
         if (!empty($condition)) {
             try {
-                // Evalueer de PHP-conditie veilig
+                // Evalueer de PHP-conditie
                 if (!eval("return ({$condition});")) {
                     continue;
                 }
@@ -234,12 +281,10 @@ function mhsm_output_snippets($position = 'header') {
     }
 }
 
-
-
 // ───── Veilige PHP-executie met logging ─────
 function mhsm_execute_php($code, $snippet_id, $position) {
     $upload_dir = wp_upload_dir();
-    $tmp_dir = $upload_dir['basedir'] . '/mhsm-temp';
+    $tmp_dir    = $upload_dir['basedir'] . '/mhsm-temp';
     if (!file_exists($tmp_dir)) wp_mkdir_p($tmp_dir);
 
     $tmp_file = $tmp_dir . "/snippet-{$snippet_id}-{$position}.php";
@@ -247,10 +292,11 @@ function mhsm_execute_php($code, $snippet_id, $position) {
 
     $output = null;
     $return_var = null;
-    exec("php -l " . escapeshellarg($tmp_file), $output, $return_var);
+    // Syntax check
+    @exec("php -l " . escapeshellarg($tmp_file), $output, $return_var);
 
     if ($return_var !== 0) {
-        error_log("❌ Fout in snippet #{$snippet_id} [{$position}]:\n" . implode("\n", $output));
+        error_log("❌ Fout in snippet #{$snippet_id} [{$position}]:\n" . implode("\n", (array)$output));
         echo "<!-- PHP fout in snippet #{$snippet_id} (zie debug.log) -->";
         return;
     }
@@ -263,15 +309,20 @@ function mhsm_execute_php($code, $snippet_id, $position) {
     }
 }
 
-add_action('wp_head', function() { mhsm_output_snippets('header'); });
+// Injectie hooks
+add_action('wp_head',      function() { mhsm_output_snippets('header'); });
 add_action('wp_body_open', function() { mhsm_output_snippets('body'); });
-add_action('wp_footer', function() { mhsm_output_snippets('footer'); });
+add_action('wp_footer',    function() { mhsm_output_snippets('footer'); });
 
+// ───── AJAX: suggesties voor paginatitels (admin-only) ─────
 add_action('wp_ajax_mhsm_get_page_titles', function() {
-    $term = sanitize_text_field($_GET['term'] ?? '');
+    if (!current_user_can('manage_options')) {
+        wp_send_json([], 403);
+    }
+    $term  = sanitize_text_field($_GET['term'] ?? '');
     $pages = get_pages([
-        'post_type' => 'page',
-        'post_status' => 'publish',
+        'post_type'        => 'page',
+        'post_status'      => 'publish',
         'suppress_filters' => false,
     ]);
     $matches = [];
@@ -282,4 +333,3 @@ add_action('wp_ajax_mhsm_get_page_titles', function() {
     }
     wp_send_json(array_slice($matches, 0, 10));
 });
-

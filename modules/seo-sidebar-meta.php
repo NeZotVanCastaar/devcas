@@ -1,13 +1,138 @@
 <?php
+if (!defined('ABSPATH')) exit;
 
+// ============================
+//   CONSTANTS & HELPERS
+// ============================
 
-add_action('add_meta_boxes', function() {
-    // Alleen tonen voor administrators
-    if (!current_user_can('administrator')) {
-        return;
+const CASTAAR_SEO_OPT = 'castaar_seo_enabled_post_types';
+
+/**
+ * Haal lijst van geactiveerde post types op. Valt terug op alle publieke post types.
+ * Alleen beschikbaar voor admins (manage_options).
+ */
+function castaar_seo_get_enabled_post_types() {
+    if (!current_user_can('manage_options')) {
+        // Voor niet-admins registreren/tonen we niets
+        return [];
+    }
+    $enabled = get_option(CASTAAR_SEO_OPT);
+    if (!is_array($enabled) || empty($enabled)) {
+        // Fallback: alle publieke post types
+        return get_post_types(['public' => true], 'names');
+    }
+    // Alleen nog bestaande post types toelaten
+    $existing = get_post_types([], 'names');
+    return array_values(array_intersect($enabled, array_keys($existing)));
+}
+
+/**
+ * Fallback default: zet standaard alle publieke post types aan
+ * (Gebruik dit in modules, omdat register_activation_hook in modules niet altijd vuurt)
+ */
+add_action('admin_init', function () {
+    if (get_option(CASTAAR_SEO_OPT, null) === null) {
+        $all = get_post_types(['public' => true], 'names');
+        update_option(CASTAAR_SEO_OPT, array_values($all));
+    }
+});
+
+// ============================
+//   INSTELLINGENPAGINA (onder CASTAAR)
+// ============================
+
+add_action('admin_menu', function () {
+    if (!current_user_can('manage_options')) return;
+
+    add_submenu_page(
+        'castaar',                          // parent: CASTAAR hoofdmenu
+        'Castaar SEO',                      // page title
+        'SEO',                              // menu title
+        'manage_options',                   // capability (admin-only)
+        'castaar-seo-settings',             // slug
+        'castaar_seo_render_settings_page'  // callback
+    );
+});
+
+function castaar_seo_render_settings_page() {
+    if (!current_user_can('manage_options')) return;
+
+    // Opslag
+    if (isset($_POST['castaar_seo_nonce']) && wp_verify_nonce($_POST['castaar_seo_nonce'], 'castaar_seo_save')) {
+        $posted    = isset($_POST['castaar_seo_post_types']) ? (array) $_POST['castaar_seo_post_types'] : [];
+        $sanitized = [];
+
+        $public_pt = get_post_types(['public' => true], 'names');
+        foreach ($posted as $pt) {
+            $pt = sanitize_key($pt);
+            if (isset($public_pt[$pt]) || in_array($pt, $public_pt, true)) {
+                $sanitized[] = $pt;
+            }
+        }
+
+        if (empty($sanitized)) {
+            // Leeg laten = fallback naar "alles aan"
+            delete_option(CASTAAR_SEO_OPT);
+        } else {
+            update_option(CASTAAR_SEO_OPT, array_values(array_unique($sanitized)));
+        }
+
+        echo '<div class="notice notice-success is-dismissible"><p>Instellingen bewaard.</p></div>';
     }
 
-    $post_types = get_post_types(['public' => true], 'names');
+    $current_enabled = castaar_seo_get_enabled_post_types();
+    $public_types    = get_post_types(['public' => true], 'objects');
+    ?>
+    <div class="wrap">
+        <h1>Castaar SEO – Instellingen</h1>
+        <p>Kies voor welke <strong>post types</strong> de Castaar SEO-metabox en SEO-kolom zichtbaar mogen zijn.
+           <br><em>Laat alles uitgevinkt om alles te tonen (standaard).</em></p>
+
+        <form method="post">
+            <?php wp_nonce_field('castaar_seo_save', 'castaar_seo_nonce'); ?>
+
+            <table class="widefat striped" style="max-width:820px;margin-top:15px;">
+                <thead>
+                    <tr>
+                        <th style="width:80px;">Actief</th>
+                        <th>Post type</th>
+                        <th>Beschrijving</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($public_types as $pt => $obj): ?>
+                        <?php $checked = in_array($pt, $current_enabled, true); ?>
+                        <tr>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="castaar_seo_post_types[]" value="<?php echo esc_attr($pt); ?>" <?php checked($checked); ?> />
+                                </label>
+                            </td>
+                            <td><strong><?php echo esc_html($obj->labels->name ?? $pt); ?></strong> <code><?php echo esc_html($pt); ?></code></td>
+                            <td><?php echo esc_html($obj->description ?? ''); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <p style="margin-top:15px;">
+                <button type="submit" class="button button-primary">Bewaar</button>
+                <a href="<?php echo esc_url(admin_url('edit.php')); ?>" class="button">Terug</a>
+            </p>
+        </form>
+    </div>
+    <?php
+}
+
+// ============================
+//   METABOX + ANALYSE + OPSLAG
+// ============================
+
+add_action('add_meta_boxes', function() {
+    // Alleen tonen voor admins
+    if (!current_user_can('manage_options')) return;
+
+    $post_types = castaar_seo_get_enabled_post_types();
     foreach ($post_types as $post_type) {
         add_meta_box(
             'page_meta_tags_box',
@@ -35,8 +160,8 @@ function analyze_seo($post_id, $verbose = false) {
 
     $post = get_post($post_id);
     if (!$post) {
-    return ['score' => 0, 'checks' => [['status' => 'fail', 'text' => 'Post niet gevonden']]];
-}
+        return ['score' => 0, 'checks' => [['status' => 'fail', 'text' => 'Post niet gevonden']]];
+    }
     $content = $post ? $post->post_content : '';
     $content_text = wp_strip_all_tags($content);
     $site_url = home_url();
@@ -207,22 +332,21 @@ function analyze_seo($post_id, $verbose = false) {
     }
 
     return [
-        'score' => round(($score / $max_score) * 100),
+        'score'  => round(($score / $max_score) * 100),
         'checks' => $results
     ];
 }
 
-
 function render_page_meta_tags_box($post) {
-    $meta_title = get_post_meta($post->ID, '_custom_meta_title', true);
+    $meta_title       = get_post_meta($post->ID, '_custom_meta_title', true);
     $meta_description = get_post_meta($post->ID, '_custom_meta_description', true);
-    $main_kw = get_post_meta($post->ID, '_custom_main_keyword', true);
-    $extra_keywords = [];
+    $main_kw          = get_post_meta($post->ID, '_custom_main_keyword', true);
+    $extra_keywords   = [];
     for ($i = 1; $i <= 4; $i++) {
         $extra_keywords[$i] = get_post_meta($post->ID, "_custom_extra_keyword_$i", true);
     }
 
-    $content = $post->post_content;
+    $content      = $post->post_content;
     $content_text = wp_strip_all_tags($content);
 
     wp_nonce_field('save_page_meta_tags', 'page_meta_tags_nonce');
@@ -257,8 +381,8 @@ function render_page_meta_tags_box($post) {
                 $seo_data = analyze_seo($post->ID, true);
                 foreach ($seo_data['checks'] as $check) {
                     $color = $check['status'] === 'pass' ? 'green' : 'red';
-                    $icon = $check['status'] === 'pass' ? '✅' : '❌';
-                    echo '<li style="color:' . $color . ';">' . $icon . ' ' . esc_html($check['text']) . '</li>';
+                    $icon  = $check['status'] === 'pass' ? '✅' : '❌';
+                    echo '<li style="color:' . esc_attr($color) . ';">' . $icon . ' ' . esc_html($check['text']) . '</li>';
                 }
                 $percentage = $seo_data['score'];
                 $bar_color = '#f44336';
@@ -288,7 +412,7 @@ function render_page_meta_tags_box($post) {
                         $label = 'Zwak';
                     }
                     echo '<li style="color:' . esc_attr($kw_color) . '; margin-bottom:5px;">';
-                    echo '🔍 <strong>' . esc_html($kw) . '</strong>: ' . esc_html($label) . ' (' . $occurrences . 'x)';
+                    echo '🔍 <strong>' . esc_html($kw) . '</strong>: ' . esc_html($label) . ' (' . intval($occurrences) . 'x)';
                     echo '</li>';
                 }
                 ?>
@@ -296,7 +420,7 @@ function render_page_meta_tags_box($post) {
         </div>
     </div>
 
-    <!-- Scorebalk helemaal onderaan -->
+    <!-- Scorebalk -->
     <style>
         .seo-score-wrap { margin-top: 30px; }
         .seo-score-bar {
@@ -313,14 +437,13 @@ function render_page_meta_tags_box($post) {
         }
     </style>
     <div class="seo-score-wrap">
-        <p><strong>Totale SEO Score:</strong> <?php echo $percentage; ?>%</p>
+        <p><strong>Totale SEO Score:</strong> <?php echo intval($percentage); ?>%</p>
         <div class="seo-score-bar">
-            <div class="seo-score-bar-inner" style="width:<?php echo $percentage; ?>%; background:<?php echo $bar_color; ?>;"></div>
+            <div class="seo-score-bar-inner" style="width:<?php echo intval($percentage); ?>%; background:<?php echo esc_attr($bar_color); ?>;"></div>
         </div>
     </div>
     <?php
 }
-
 
 add_action('save_post', function($post_id) {
     if (!isset($_POST['page_meta_tags_nonce']) || !wp_verify_nonce($_POST['page_meta_tags_nonce'], 'save_page_meta_tags')) {
@@ -328,9 +451,7 @@ add_action('save_post', function($post_id) {
     }
 
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
-
-    // Alleen admins mogen opslaan
-    if (!current_user_can('administrator')) return;
+    if (!current_user_can('manage_options')) return;
 
     update_post_meta($post_id, '_custom_meta_title', sanitize_text_field($_POST['custom_meta_title'] ?? ''));
     update_post_meta($post_id, '_custom_meta_description', sanitize_textarea_field($_POST['custom_meta_description'] ?? ''));
@@ -344,38 +465,14 @@ add_action('save_post', function($post_id) {
     delete_transient('seo_score_' . $post_id);
 });
 
-
-add_filter('pre_get_document_title', function($title) {
-    if (is_singular()) {
-        $custom_title = get_post_meta(get_the_ID(), '_custom_meta_title', true);
-        if (!empty($custom_title)) {
-            return $custom_title;
-        }
-    }
-    return $title;
-});
-
-function calculate_seo_score_for_post($post_id) {
-    $cache_key = 'seo_score_' . $post_id;
-    $cached = get_transient($cache_key);
-
-    if ($cached !== false) {
-        return $cached;
-    }
-
-    $seo = analyze_seo($post_id);
-    set_transient($cache_key, $seo['score'], HOUR_IN_SECONDS);
-
-    return $seo['score'];
-}
-
-
+// ============================
+//   ADMIN KOLOMMEN (SEO SCORE)
+// ============================
 
 add_action('admin_init', function() {
-    // Alleen admins mogen SEO kolom zien
-    if (!current_user_can('administrator')) return;
+    if (!current_user_can('manage_options')) return;
 
-    $post_types = get_post_types(['public' => true], 'names');
+    $post_types = castaar_seo_get_enabled_post_types();
     foreach ($post_types as $post_type) {
         add_filter("manage_{$post_type}_posts_columns", function($columns) {
             $columns['seo_score'] = 'SEO Score';
@@ -384,7 +481,7 @@ add_action('admin_init', function() {
 
         add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
             if ($column_name === 'seo_score') {
-                $score = calculate_seo_score_for_post($post_id);
+                $score   = calculate_seo_score_for_post($post_id);
                 $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
                 $content = get_post_field('post_content', $post_id);
                 $site_url = home_url();
@@ -395,7 +492,7 @@ add_action('admin_init', function() {
                 elseif ($score >= 25) $bg = '#ffc107'; // geel
 
                 // score badge
-                echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . $bg . ';color:#fff;margin-bottom:4px;">' . $score . ' / 100</div>';
+                echo '<div style="display:inline-block;padding:4px 8px;border-radius:6px;font-weight:bold;font-size:13px;background:' . esc_attr($bg) . ';color:#fff;margin-bottom:4px;">' . intval($score) . ' / 100</div>';
 
                 // hoofdkeyword tonen
                 if (!empty($main_kw)) {
@@ -419,15 +516,48 @@ add_action('admin_init', function() {
 
                 // tonen
                 echo '<div style="margin-top:3px;font-size:11px;color:#555;">';
-                echo '<strong>Links:</strong> 🔗 ' . $internal_links . ' intern | 🌐 ' . $external_links . ' extern';
+                echo '<strong>Links:</strong> 🔗 ' . intval($internal_links) . ' intern | 🌐 ' . intval($external_links) . ' extern';
                 echo '</div>';
             }
         }, 10, 2);
     }
 });
 
-// === FRONT-END META TAGS UIT JE CUSTOM FIELDS ===
-// Plaats dit onderaan je pluginbestand.
+// ============================
+//   TITEL OVERRIDES & CACHING
+// ============================
+
+add_filter('pre_get_document_title', function($title) {
+    if (is_singular()) {
+        $id = get_the_ID();
+        if ($id) {
+            $custom_title = get_post_meta($id, '_custom_meta_title', true);
+            if (!empty($custom_title)) {
+                return $custom_title;
+            }
+        }
+    }
+    return $title;
+});
+
+function calculate_seo_score_for_post($post_id) {
+    $cache_key = 'seo_score_' . $post_id;
+    $cached = get_transient($cache_key);
+
+    if ($cached !== false) {
+        return $cached;
+    }
+
+    $seo = analyze_seo($post_id);
+    set_transient($cache_key, $seo['score'], HOUR_IN_SECONDS);
+
+    return $seo['score'];
+}
+
+// ============================
+//   FRONT-END META TAGS
+// ============================
+
 add_action('wp_head', function () {
     if (!is_singular()) {
         return;
@@ -435,13 +565,13 @@ add_action('wp_head', function () {
 
     $post_id = get_queried_object_id();
 
-    // 1) META DESCRIPTION (belangrijk voor Google)
+    // 1) META DESCRIPTION
     $meta_description = get_post_meta($post_id, '_custom_meta_description', true);
     if (!empty($meta_description)) {
         echo '<meta name="description" content="' . esc_attr(wp_strip_all_tags($meta_description)) . '">' . "\n";
     }
 
-    // 2) (Optioneel) META KEYWORDS — door Google genegeerd, mag je weglaten
+    // 2) (Optioneel) META KEYWORDS
     $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
     $extra = [];
     for ($i = 1; $i <= 4; $i++) {
@@ -453,7 +583,7 @@ add_action('wp_head', function () {
         echo '<meta name="keywords" content="' . esc_attr(implode(', ', $keywords)) . '">' . "\n";
     }
 
-    // 3) (Aanrader) OG/Twitter voor betere social previews
+    // 3) OG/Twitter
     $custom_title = get_post_meta($post_id, '_custom_meta_title', true);
     if (!empty($custom_title)) {
         $t = esc_attr(wp_strip_all_tags($custom_title));
@@ -465,4 +595,4 @@ add_action('wp_head', function () {
         echo '<meta property="og:description" content="' . $d . '">' . "\n";
         echo '<meta name="twitter:description" content="' . $d . '">' . "\n";
     }
-}, 5); // vroeg laten lopen is prima
+}, 5);
