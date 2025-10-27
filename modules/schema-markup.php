@@ -88,6 +88,7 @@ add_action('add_meta_boxes', function () {
     ]);
 
     global $post;
+    if (!$post) return;
 
     if (!in_array($post->post_type, $settings['post_types'], true)) return;
 
@@ -108,9 +109,12 @@ function schema_module_render_metabox($post)
 {
     $value = get_post_meta($post->ID, '_schema_module_json', true);
     wp_nonce_field('schema_module_nonce_action', 'schema_module_nonce_field');
-    echo '<textarea style="width:100%;height:200px;" name="schema_module_field">'
+
+    $placeholder = "{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"Organization\",\n  \"name\": \"Voorbeeld\"\n}\n\n---\n\n{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"BreadcrumbList\",\n  \"itemListElement\": []\n}\n\nOF als array:\n[\n  { ... },\n  { ... }\n]";
+
+    echo '<textarea style="width:100%;height:220px;" name="schema_module_field" placeholder="' . esc_attr($placeholder) . '">'
         . esc_textarea($value) . '</textarea>';
-    echo '<p class="description">Plak hier je JSON-LD schema code (volledig, inclusief { }).</p>';
+    echo '<p class="description">Meerdere schema’s? Gebruik <strong>---</strong> op een aparte lijn als scheiding, of plak een <strong>JSON array</strong> <code>[{...},{...}]</code>.</p>';
 }
 
 add_action('save_post', function ($post_id) {
@@ -128,14 +132,112 @@ add_action('save_post', function ($post_id) {
 
 
 /* -----------------------------------------------------
- *  FRONTEND: JSON-LD IN DE HEAD PLAATSEN
+ *  MULTI-SCHEMA PARSER
+ * ---------------------------------------------------*/
+
+/**
+ * Haalt 1..n JSON-LD blokken uit ruwe input:
+ * - Ondersteunt 1 object, array [{...},{...}], meerdere blokken met '---',
+ * - Stript eventueel meegeplakte <script type="application/ld+json">...</script>.
+ * Retour: array van JSON strings (elk 1 object), netjes ge-encodeerd waar mogelijk.
+ */
+function schema_module_extract_json_blocks($raw) {
+    $raw = trim((string) $raw);
+    if ($raw === '') return [];
+
+    $candidates = [];
+
+    // A) Als er <script type="application/ld+json"> blokken in staan, pak de innerHTML
+    if (preg_match_all('#<script[^>]*application/ld\+json[^>]*>(.*?)</script>#is', $raw, $m) && !empty($m[1])) {
+        foreach ($m[1] as $inner) {
+            $inner = trim($inner);
+            if ($inner !== '') $candidates[] = $inner;
+        }
+    } else {
+        $candidates[] = $raw;
+    }
+
+    $out = [];
+
+    foreach ($candidates as $block) {
+        $block = trim($block);
+
+        // 1) Eenvoudig geval: geldig JSON
+        $decoded = json_decode($block, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            // Array? Dan elk item apart uitspuwen
+            if (is_array($decoded) && array_keys($decoded) === range(0, count($decoded)-1)) {
+                foreach ($decoded as $item) {
+                    if (is_array($item)) {
+                        $out[] = wp_json_encode($item, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    }
+                }
+            } else {
+                // Enkel object
+                $out[] = wp_json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+            continue;
+        }
+
+        // 2) Splitsen op delimiter '---' (op een aparte lijn)
+        $parts = preg_split('/^\s*---\s*$/m', $block);
+        if ($parts && count($parts) > 1) {
+            foreach ($parts as $p) {
+                $p = trim($p);
+                if ($p === '') continue;
+                $d = json_decode($p, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $out[] = wp_json_encode($d, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                } else {
+                    // laatste redmiddel: raw (voor gevorderd gebruik, bv. vooraf al geldig en bewust niet decodeerbaar)
+                    $out[] = $p;
+                }
+            }
+            continue;
+        }
+
+        // 3) Heuristiek: "}{" -> "},{", en dan in array wrappen
+        $fixed   = preg_replace('/}\s*{\s*/', '},{', $block);
+        $wrapped = '[' . $fixed . ']';
+        $arr = json_decode($wrapped, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($arr)) {
+            foreach ($arr as $item) {
+                if (is_array($item)) {
+                    $out[] = wp_json_encode($item, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                }
+            }
+            continue;
+        }
+
+        // 4) Echt fallback: raw block
+        $out[] = $block;
+    }
+
+    // Filter lege strings
+    return array_values(array_filter($out, function($x){ return trim($x) !== ''; }));
+}
+
+
+/* -----------------------------------------------------
+ *  FRONTEND: JSON-LD IN DE HEAD PLAATSEN (MEERDERE)
  * ---------------------------------------------------*/
 
 add_action('wp_head', function () {
-    if (is_singular()) {
-        $schema = get_post_meta(get_the_ID(), '_schema_module_json', true);
-        if ($schema) {
-            echo '<script type="application/ld+json">' . $schema . '</script>';
-        }
+    // Respecteer ingestelde post types
+    $settings = get_option('schema_module_settings', [
+        'roles' => ['administrator'],
+        'post_types' => ['post', 'page']
+    ]);
+    $allowed = isset($settings['post_types']) ? (array) $settings['post_types'] : ['post','page'];
+    if (!is_singular($allowed)) return;
+
+    $raw = get_post_meta(get_the_ID(), '_schema_module_json', true);
+    if (!$raw) return;
+
+    $blocks = schema_module_extract_json_blocks($raw);
+    if (!$blocks) return;
+
+    foreach ($blocks as $json) {
+        echo "\n<script type=\"application/ld+json\">{$json}</script>\n";
     }
-});
+}, 1); // vroeg inladen om minifiers/cachers minder kans te geven dit te verwijderen
