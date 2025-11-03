@@ -176,6 +176,7 @@ add_action('add_meta_boxes', function () {
                 <input type="checkbox" name="seo_noindex" value="1" <?php checked($noindex, '1'); ?> />
                 <strong>Voorkom indexatie</strong> door zoekmachines (voegt <code>noindex</code> toe)
             </label>
+            <input type="hidden" name="seo_noindex_submitted" value="1">
     <?php
             },
             $post_type,
@@ -203,8 +204,17 @@ add_action('save_post', function ($post_id) {
     $post_type_obj = get_post_type_object($post_type);
     if (!current_user_can($post_type_obj->cap->edit_post, $post_id)) return;
 
-    // Nonce validation - only check if nonce is present (metabox submit)
-    // Quick edit doesn't send this nonce, so we skip validation for that case
+    // CRITICAL: Only process if this save came from our metabox or quick edit
+    // Check for metabox nonce OR quick edit action OR hidden field
+    $is_metabox_save = isset($_POST['seo_noindex_nonce']) || isset($_POST['seo_noindex_submitted']);
+    $is_quick_edit = isset($_POST['action']) && $_POST['action'] === 'inline-save';
+
+    // If neither, this is some other save (block editor, REST API, etc.) - don't touch the meta
+    if (!$is_metabox_save && !$is_quick_edit) {
+        return;
+    }
+
+    // Validate metabox nonce if present
     if (isset($_POST['seo_noindex_nonce'])) {
         if (!wp_verify_nonce($_POST['seo_noindex_nonce'], 'seo_noindex_save_' . $post_id)) {
             return;
