@@ -12,10 +12,11 @@ defined('ABSPATH') || exit;
 // ============================
 
 const CASTAAR_NOINDEX_PT_OPT   = 'castaar_noindex_enabled_post_types';
-const CASTAAR_NOINDEX_ROLES_OPT= 'castaar_noindex_allowed_roles';
+const CASTAAR_NOINDEX_ROLES_OPT = 'castaar_noindex_allowed_roles';
 
 /** Mag de huidige gebruiker de noindex-metabox/kolom zien & opslaan? */
-function castaar_noindex_user_can(): bool {
+function castaar_noindex_user_can(): bool
+{
     if (!is_user_logged_in()) return false;
     $allowed = get_option(CASTAAR_NOINDEX_ROLES_OPT, null);
     if (!is_array($allowed) || empty($allowed)) {
@@ -26,7 +27,8 @@ function castaar_noindex_user_can(): bool {
 }
 
 /** Geactiveerde post types (fallback = alle publieke) */
-function castaar_noindex_get_enabled_post_types(): array {
+function castaar_noindex_get_enabled_post_types(): array
+{
     $enabled = get_option(CASTAAR_NOINDEX_PT_OPT);
     if (!is_array($enabled) || empty($enabled)) {
         return get_post_types(['public' => true], 'names');
@@ -61,7 +63,8 @@ add_action('admin_menu', function () {
     );
 });
 
-function castaar_noindex_render_settings_page() {
+function castaar_noindex_render_settings_page()
+{
     if (!current_user_can('manage_options')) return;
 
     if (isset($_POST['castaar_noindex_nonce']) && wp_verify_nonce($_POST['castaar_noindex_nonce'], 'castaar_noindex_save')) {
@@ -97,8 +100,8 @@ function castaar_noindex_render_settings_page() {
     if (empty($enabled_pts)) $enabled_pts = get_post_types(['public' => true], 'names');
     $public_types  = get_post_types(['public' => true], 'objects');
     $allowed_roles = (array) get_option(CASTAAR_NOINDEX_ROLES_OPT, ['administrator']);
-    $editable_roles= get_editable_roles();
-    ?>
+    $editable_roles = get_editable_roles();
+?>
     <div class="wrap">
         <h1>Noindex – Instellingen</h1>
         <form method="post">
@@ -106,20 +109,26 @@ function castaar_noindex_render_settings_page() {
 
             <h2 class="title">Zichtbare post types (metabox & kolom)</h2>
             <table class="widefat striped" style="max-width:820px;margin-top:10px;">
-                <thead><tr><th style="width:80px;">Actief</th><th>Post type</th><th>Beschrijving</th></tr></thead>
-                <tbody>
-                <?php foreach ($public_types as $pt => $obj): ?>
+                <thead>
                     <tr>
-                        <td>
-                            <label>
-                                <input type="checkbox" name="castaar_noindex_post_types[]" value="<?php echo esc_attr($pt); ?>"
-                                    <?php checked(in_array($pt, $enabled_pts, true)); ?>>
-                            </label>
-                        </td>
-                        <td><strong><?php echo esc_html($obj->labels->name ?? $pt); ?></strong> <code><?php echo esc_html($pt); ?></code></td>
-                        <td><?php echo esc_html($obj->description ?? ''); ?></td>
+                        <th style="width:80px;">Actief</th>
+                        <th>Post type</th>
+                        <th>Beschrijving</th>
                     </tr>
-                <?php endforeach; ?>
+                </thead>
+                <tbody>
+                    <?php foreach ($public_types as $pt => $obj): ?>
+                        <tr>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="castaar_noindex_post_types[]" value="<?php echo esc_attr($pt); ?>"
+                                        <?php checked(in_array($pt, $enabled_pts, true)); ?>>
+                                </label>
+                            </td>
+                            <td><strong><?php echo esc_html($obj->labels->name ?? $pt); ?></strong> <code><?php echo esc_html($pt); ?></code></td>
+                            <td><?php echo esc_html($obj->description ?? ''); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
 
@@ -162,12 +171,12 @@ add_action('add_meta_boxes', function () {
                 }
                 $noindex = get_post_meta($post->ID, '_seo_noindex', true);
                 wp_nonce_field('seo_noindex_save_' . $post->ID, 'seo_noindex_nonce');
-                ?>
-                <label>
-                    <input type="checkbox" name="seo_noindex" value="1" <?php checked($noindex, '1'); ?> />
-                    <strong>Voorkom indexatie</strong> door zoekmachines (voegt <code>noindex</code> toe)
-                </label>
-                <?php
+    ?>
+            <label>
+                <input type="checkbox" name="seo_noindex" value="1" <?php checked($noindex, '1'); ?> />
+                <strong>Voorkom indexatie</strong> door zoekmachines (voegt <code>noindex</code> toe)
+            </label>
+    <?php
             },
             $post_type,
             'side',
@@ -185,18 +194,30 @@ add_action('save_post', function ($post_id) {
     if (wp_is_post_revision($post_id)) return;
     if (!castaar_noindex_user_can()) return;
 
-    // Nonce op metabox-scherm
-    if (isset($_POST['seo_noindex_nonce'])
-        && !wp_verify_nonce($_POST['seo_noindex_nonce'], 'seo_noindex_save_' . $post_id)) {
-        return;
+    // Check if this post type is enabled for noindex
+    $enabled_post_types = castaar_noindex_get_enabled_post_types();
+    $post_type = get_post_type($post_id);
+    if (!in_array($post_type, $enabled_post_types, true)) return;
+
+    // Check capability
+    $post_type_obj = get_post_type_object($post_type);
+    if (!current_user_can($post_type_obj->cap->edit_post, $post_id)) return;
+
+    // Nonce validation - only check if nonce is present (metabox submit)
+    // Quick edit doesn't send this nonce, so we skip validation for that case
+    if (isset($_POST['seo_noindex_nonce'])) {
+        if (!wp_verify_nonce($_POST['seo_noindex_nonce'], 'seo_noindex_save_' . $post_id)) {
+            return;
+        }
     }
 
+    // Update or delete the meta based on checkbox state
     if (isset($_POST['seo_noindex']) && $_POST['seo_noindex'] == '1') {
         update_post_meta($post_id, '_seo_noindex', '1');
     } else {
         delete_post_meta($post_id, '_seo_noindex');
     }
-});
+}, 10, 1);
 
 // ============================
 //   FRONTEND OUTPUT
@@ -214,12 +235,27 @@ add_action('wp_head', function () {
 //   SITEMAP FILTER
 // ============================
 
+// Exclude noindex posts from XML sitemap
 add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
-    $args['meta_query'] = [
+    // Initialize meta_query if it doesn't exist
+    if (!isset($args['meta_query'])) {
+        $args['meta_query'] = [];
+    }
+
+    // Add condition to exclude posts with noindex = 1
+    $args['meta_query'][] = [
         'relation' => 'OR',
-        ['key' => '_seo_noindex', 'compare' => 'NOT EXISTS'],
-        ['key' => '_seo_noindex', 'value' => '1', 'compare' => '!='],
+        [
+            'key'     => '_seo_noindex',
+            'compare' => 'NOT EXISTS',
+        ],
+        [
+            'key'     => '_seo_noindex',
+            'value'   => '1',
+            'compare' => '!=',
+        ],
     ];
+
     return $args;
 }, 10, 2);
 
@@ -227,22 +263,51 @@ add_filter('wp_sitemaps_posts_query_args', function ($args, $post_type) {
 //   ADMIN KOLOMMEN
 // ============================
 
-add_action('admin_init', function () {
-    if (!castaar_noindex_user_can()) return;
-
-    $post_types = castaar_noindex_get_enabled_post_types();
-    foreach ($post_types as $post_type) {
-        add_filter("manage_{$post_type}_posts_columns", function ($columns) {
-            $columns['seo_noindex'] = 'Noindex';
-            return $columns;
-        });
-
-        add_action("manage_{$post_type}_posts_custom_column", function ($column, $post_id) {
-            if ($column === 'seo_noindex') {
-                $value = get_post_meta($post_id, '_seo_noindex', true);
-                echo $value === '1' ? '🚫' : '✅';
+// Hook columns directly per post type instead of using admin_init
+foreach (castaar_noindex_get_enabled_post_types() as $post_type) {
+    add_filter("manage_{$post_type}_posts_columns", function ($columns) {
+        if (!castaar_noindex_user_can()) return $columns;
+        // Insert before date column if it exists
+        $new_columns = [];
+        foreach ($columns as $key => $value) {
+            if ($key === 'date') {
+                $new_columns['seo_noindex'] = 'Noindex';
             }
-        }, 10, 2);
+            $new_columns[$key] = $value;
+        }
+        // If date column doesn't exist, just append
+        if (!isset($columns['date'])) {
+            $new_columns['seo_noindex'] = 'Noindex';
+        }
+        return $new_columns;
+    });
+
+    add_action("manage_{$post_type}_posts_custom_column", function ($column, $post_id) {
+        if (!castaar_noindex_user_can()) return;
+        if ($column === 'seo_noindex') {
+            $value = get_post_meta($post_id, '_seo_noindex', true);
+            $status = $value === '1' ? '🚫' : '✅';
+            $title = $value === '1' ? 'Niet indexeerbaar (noindex actief)' : 'Indexeerbaar';
+            echo '<span title="' . esc_attr($title) . '" style="font-size:16px;cursor:help;">' . $status . '</span>';
+        }
+    }, 10, 2);
+
+    // Make column sortable
+    add_filter("manage_edit-{$post_type}_sortable_columns", function ($columns) {
+        if (!castaar_noindex_user_can()) return $columns;
+        $columns['seo_noindex'] = 'seo_noindex';
+        return $columns;
+    });
+}
+
+// Handle sorting
+add_action('pre_get_posts', function ($query) {
+    if (!is_admin() || !$query->is_main_query()) return;
+
+    $orderby = $query->get('orderby');
+    if ($orderby === 'seo_noindex') {
+        $query->set('meta_key', '_seo_noindex');
+        $query->set('orderby', 'meta_value');
     }
 });
 
@@ -253,6 +318,10 @@ add_action('admin_init', function () {
 add_action('quick_edit_custom_box', function ($column_name, $post_type) {
     if (!castaar_noindex_user_can()) return;
     if ($column_name !== 'seo_noindex') return;
+
+    // Only show for enabled post types
+    $enabled_post_types = castaar_noindex_get_enabled_post_types();
+    if (!in_array($post_type, $enabled_post_types, true)) return;
     ?>
     <fieldset class="inline-edit-col-right">
         <div class="inline-edit-col">
@@ -262,34 +331,100 @@ add_action('quick_edit_custom_box', function ($column_name, $post_type) {
             </label>
         </div>
     </fieldset>
-    <?php
+<?php
 }, 10, 2);
 
 add_action('admin_footer-edit.php', function () {
     if (!castaar_noindex_user_can()) return;
 
     global $typenow;
-    if (!$typenow || !post_type_supports($typenow, 'title')) return;
-    ?>
-    <script>
-    jQuery(function($) {
-        const seoNoindexData = {};
-        $('#the-list tr').each(function() {
-            const id = $(this).attr('id');
-            if (!id) return;
-            const postId = id.replace('post-', '');
-            const isNoindex = $(this).find('.column-seo_noindex').text().trim() === '🚫';
-            seoNoindexData[postId] = isNoindex;
-        });
+    if (!$typenow) return;
 
-        const originalEdit = inlineEditPost.edit;
-        inlineEditPost.edit = function(postId) {
-            originalEdit.apply(this, arguments);
-            if (typeof postId === 'object') postId = this.getId(postId);
-            const $editRow = $('#edit-' + postId);
-            $editRow.find('input[name="seo_noindex"]').prop('checked', !!seoNoindexData[postId]);
-        };
-    });
+    // Only for enabled post types
+    $enabled_post_types = castaar_noindex_get_enabled_post_types();
+    if (!in_array($typenow, $enabled_post_types, true)) return;
+?>
+    <script>
+        jQuery(function($) {
+            const seoNoindexData = {};
+
+            // Collect noindex status from table rows
+            $('#the-list tr').each(function() {
+                const id = $(this).attr('id');
+                if (!id) return;
+                const postId = id.replace('post-', '');
+                const isNoindex = $(this).find('.column-seo_noindex').text().trim() === '🚫';
+                seoNoindexData[postId] = isNoindex;
+            });
+
+            // Override quick edit to populate checkbox
+            const originalEdit = inlineEditPost.edit;
+            inlineEditPost.edit = function(postId) {
+                originalEdit.apply(this, arguments);
+
+                if (typeof postId === 'object') {
+                    postId = this.getId(postId);
+                }
+
+                const $editRow = $('#edit-' + postId);
+                const $checkbox = $editRow.find('input[name="seo_noindex"]');
+
+                if ($checkbox.length && seoNoindexData[postId] !== undefined) {
+                    $checkbox.prop('checked', !!seoNoindexData[postId]);
+                }
+            };
+        });
     </script>
-    <?php
+<?php
 });
+
+// ============================
+//   BULK EDIT (Optional enhancement)
+// ============================
+
+add_action('bulk_edit_custom_box', function ($column_name, $post_type) {
+    if (!castaar_noindex_user_can()) return;
+    if ($column_name !== 'seo_noindex') return;
+
+    $enabled_post_types = castaar_noindex_get_enabled_post_types();
+    if (!in_array($post_type, $enabled_post_types, true)) return;
+?>
+    <fieldset class="inline-edit-col-right">
+        <div class="inline-edit-col">
+            <label class="alignleft">
+                <span class="title">Noindex</span>
+                <select name="seo_noindex_bulk">
+                    <option value="-1">— Niet wijzigen —</option>
+                    <option value="0">Indexeerbaar (✅)</option>
+                    <option value="1">Niet indexeerbaar (🚫)</option>
+                </select>
+            </label>
+        </div>
+    </fieldset>
+<?php
+}, 10, 2);
+
+// Handle bulk edit save
+add_action('save_post', function ($post_id) {
+    // Only handle bulk edit requests
+    if (!isset($_REQUEST['seo_noindex_bulk'])) return;
+    if ($_REQUEST['seo_noindex_bulk'] === '-1') return;
+
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (wp_is_post_revision($post_id)) return;
+    if (!castaar_noindex_user_can()) return;
+
+    $enabled_post_types = castaar_noindex_get_enabled_post_types();
+    $post_type = get_post_type($post_id);
+    if (!in_array($post_type, $enabled_post_types, true)) return;
+
+    $post_type_obj = get_post_type_object($post_type);
+    if (!current_user_can($post_type_obj->cap->edit_post, $post_id)) return;
+
+    $value = sanitize_text_field($_REQUEST['seo_noindex_bulk']);
+    if ($value === '1') {
+        update_post_meta($post_id, '_seo_noindex', '1');
+    } elseif ($value === '0') {
+        delete_post_meta($post_id, '_seo_noindex');
+    }
+}, 5, 1); // Priority 5 to run before main save_post handler
