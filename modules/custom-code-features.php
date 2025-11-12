@@ -199,11 +199,20 @@ add_filter('wp_check_filetype_and_ext', function($data, $file, $filename, $mimes
     return $data;
 }, 10, 4);
 
-// AOS scripts en styles laden (frontend)
+// AOS scripts en styles laden
 add_action('wp_enqueue_scripts', function() {
+    // CSS eerst
     wp_enqueue_style('aos-css', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css', [], '2.3.4');
+
+    // JS met handle zodat we inline script erna kunnen injecteren
     wp_enqueue_script('aos-js', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.js', [], '2.3.4', true);
-    wp_add_inline_script('aos-js', 'document.addEventListener("DOMContentLoaded", function(){ AOS.init({ duration: 1000 }); });');
+
+    // Voeg AOS.init toe nadat het script geladen is
+    wp_add_inline_script('aos-js', 'document.addEventListener("DOMContentLoaded", function() {
+        AOS.init({
+     	offset: -100
+        });
+    });');
 });
 
 /**
