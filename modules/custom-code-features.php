@@ -223,7 +223,9 @@ add_filter('wp_unique_filename', function ($filename, $ext, $dir) {
 }, 10, 3);
 
 // [year] shortcode
-function shortcode_year() { return date('Y'); }
+function shortcode_year() {
+    return '<span class="shortcode-year">' . date('Y') . '</span>';
+}
 add_shortcode('year', 'shortcode_year');
 
 // In admin-lijsten standaard enkel 'publish' tonen (🔒 alleen voor admins)
