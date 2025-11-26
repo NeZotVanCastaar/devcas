@@ -3,7 +3,7 @@
     Plugin Name: DevCas
     Plugin URI: https://github.com/NeZotVanCastaar/devcas
     Description: Een verzameling handige SEO-tools, bulk editors en custom functionaliteit.
-    Version: 1.0.7
+    Version: 1.0.8
     Author: Castaar – Alec Meganck & Robbe Cooman
     Author URI: https://castaar.com
 */
@@ -15,6 +15,7 @@ const DEVCAS_OPTION = 'devcas_enabled_modules';
 
 // ------------- Plugin Update Checker -------------
 require plugin_dir_path(__FILE__) . 'plugin-update-checker/plugin-update-checker.php';
+
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $updateChecker = PucFactory::buildUpdateChecker(
@@ -28,7 +29,8 @@ $updateChecker->setBranch('main');
 /**
  * Vind alle modulebestanden in /modules en geef [slug => [label, file]] terug.
  */
-function devcas_get_modules(): array {
+function devcas_get_modules(): array
+{
     $dir   = plugin_dir_path(__FILE__) . 'modules/';
     $files = glob($dir . '*.php') ?: [];
     $mods  = [];
@@ -49,7 +51,8 @@ function devcas_get_modules(): array {
  * Geef de huidige geselecteerde modules (slugs) terug.
  * Als er geen optie is opgeslagen, interpreteren we dat als "alles actief".
  */
-function devcas_selected_modules(): array {
+function devcas_selected_modules(): array
+{
     $saved = get_option(DEVCAS_OPTION, null);
     if ($saved === null) {
         // Geen keuze gemaakt → alles actief
@@ -72,26 +75,29 @@ add_action('plugins_loaded', function () {
 
 // ------------- CASTAAR assets & logo helpers -------------
 if (!function_exists('castaar_logo_url')) {
-    function castaar_logo_url() {
+    function castaar_logo_url()
+    {
         // Dit is je header/brand gif; mag blijven.
         return 'https://castaar.com/dev/castaar.gif';
     }
 }
-function devcas_icon_url_svg() {
+function devcas_icon_url_svg()
+{
     // Lokaal icoon in de plugin: /assets/icon.svg
     return plugin_dir_url(__FILE__) . 'assets/icon.svg';
 }
 
 // ------------- Overzichtspagina (zonder witte card) -------------
-function devcas_castaar_dashboard() {
+function devcas_castaar_dashboard()
+{
     if (!current_user_can('manage_options')) return;
 
     $logo = esc_url(castaar_logo_url());
-    ?>
+?>
     <div class="wrap">
-    
-            <img src="<?php echo $logo; ?>" alt="Castaar" style="height:50px;"> 
-  
+
+        <img src="<?php echo $logo; ?>" alt="Castaar" style="height:50px;">
+
 
         <p>Welkom! Beheer hieronder welke <strong>modules</strong> actief zijn op deze site.</p>
 
@@ -104,7 +110,7 @@ function devcas_castaar_dashboard() {
             ?>
         </form>
     </div>
-    <?php
+<?php
 }
 
 // ------------- Admin menu -------------
@@ -137,7 +143,7 @@ add_action('admin_menu', function () {
 add_action('admin_head', function () {
     if (!current_user_can('manage_options')) return;
 
-    $icon_url = esc_url( devcas_icon_url_svg() );
+    $icon_url = esc_url(devcas_icon_url_svg());
     echo '<style>
         /* verberg het <img> in het menu; we tekenen het icoon via een mask die currentColor volgt */
         #adminmenu #toplevel_page_castaar .wp-menu-image img { display:none !important; }

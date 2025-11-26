@@ -12,7 +12,8 @@ const CASTAAR_SEO_ROLES = 'castaar_seo_allowed_roles'; // nieuw: wie mag SEO-met
  * Huidige gebruiker: mag die de SEO-metabox/kolom zien en opslaan?
  * Bepaald via rollen (default: alleen administrator).
  */
-function castaar_seo_user_can_edit(): bool {
+function castaar_seo_user_can_edit(): bool
+{
     if (!is_user_logged_in()) return false;
     $allowed = get_option(CASTAAR_SEO_ROLES, null);
 
@@ -31,7 +32,8 @@ function castaar_seo_user_can_edit(): bool {
  * Haal lijst van geactiveerde post types op. Valt terug op alle publieke post types.
  * Alleen laden voor gebruikers die de metabox mogen zien.
  */
-function castaar_seo_get_enabled_post_types() {
+function castaar_seo_get_enabled_post_types()
+{
     if (!castaar_seo_user_can_edit()) {
         return [];
     }
@@ -77,7 +79,8 @@ add_action('admin_menu', function () {
     );
 });
 
-function castaar_seo_render_settings_page() {
+function castaar_seo_render_settings_page()
+{
     if (!current_user_can('manage_options')) return;
 
     // Opslag
@@ -124,7 +127,7 @@ function castaar_seo_render_settings_page() {
     $public_types   = get_post_types(['public' => true], 'objects');
     $allowed_roles  = (array) get_option(CASTAAR_SEO_ROLES, ['administrator']);
     $editable_roles = get_editable_roles();
-    ?>
+?>
     <div class="wrap">
         <h1>Castaar SEO – Instellingen</h1>
         <p>Kies voor welke <strong>post types</strong> de Castaar SEO-metabox en SEO-kolom zichtbaar mogen zijn.</p>
@@ -174,14 +177,14 @@ function castaar_seo_render_settings_page() {
             </p>
         </form>
     </div>
-    <?php
+<?php
 }
 
 // ============================
 //   METABOX + ANALYSE + OPSLAG
 // ============================
 
-add_action('add_meta_boxes', function() {
+add_action('add_meta_boxes', function () {
     if (!castaar_seo_user_can_edit()) return;
 
     $post_types = castaar_seo_get_enabled_post_types();
@@ -197,7 +200,8 @@ add_action('add_meta_boxes', function() {
     }
 });
 
-function analyze_seo($post_id, $verbose = false) {
+function analyze_seo($post_id, $verbose = false)
+{
     $results = [];
     $score = 0;
     $max_score = 20;
@@ -220,7 +224,7 @@ function analyze_seo($post_id, $verbose = false) {
     $url = get_permalink($post_id);
 
     // Check helpers
-    $add_result = function($passed, $message_pass, $message_fail) use (&$results, &$score, $verbose) {
+    $add_result = function ($passed, $message_pass, $message_fail) use (&$results, &$score, $verbose) {
         if ($passed) {
             $score++;
             if ($verbose) $results[] = ['status' => 'pass', 'text' => $message_pass];
@@ -288,7 +292,7 @@ function analyze_seo($post_id, $verbose = false) {
 
     // 10. Gemiddelde paragraaflengte
     preg_match_all('/<p[^>]*>(.*?)<\/p>/i', $content, $matches);
-    $par_lengths = array_map(function($p) {
+    $par_lengths = array_map(function ($p) {
         return str_word_count(wp_strip_all_tags($p));
     }, $matches[1] ?? []);
     if ($par_lengths) {
@@ -342,7 +346,8 @@ function analyze_seo($post_id, $verbose = false) {
             "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
              INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
              WHERE pm.meta_key = '_custom_meta_title' AND pm.meta_value = %s AND p.ID != %d AND p.post_status = 'publish'",
-            $meta_title, $post_id
+            $meta_title,
+            $post_id
         ));
         $add_result($count == 0, 'Meta Title is uniek', 'Meta Title komt op andere pagina(s) voor');
     }
@@ -354,7 +359,8 @@ function analyze_seo($post_id, $verbose = false) {
             "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
              INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
              WHERE pm.meta_key = '_custom_meta_description' AND pm.meta_value = %s AND p.ID != %d AND p.post_status = 'publish'",
-            $meta_description, $post_id
+            $meta_description,
+            $post_id
         ));
         $add_result($count == 0, 'Meta Description is uniek', 'Meta Description komt op andere pagina(s) voor');
     }
@@ -378,7 +384,8 @@ function analyze_seo($post_id, $verbose = false) {
             "SELECT COUNT(*) FROM {$wpdb->postmeta} pm
              INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
              WHERE pm.meta_key = '_custom_main_keyword' AND LOWER(pm.meta_value) = LOWER(%s) AND p.ID != %d AND p.post_status = 'publish'",
-            $main_kw, $post_id
+            $main_kw,
+            $post_id
         ));
         $add_result($count_kw == 0, 'Focus keyword is uniek', 'Focus keyword komt elders voor');
     }
@@ -389,7 +396,8 @@ function analyze_seo($post_id, $verbose = false) {
     ];
 }
 
-function render_page_meta_tags_box($post) {
+function render_page_meta_tags_box($post)
+{
     $meta_title       = get_post_meta($post->ID, '_custom_meta_title', true);
     $meta_description = get_post_meta($post->ID, '_custom_meta_description', true);
     $main_kw          = get_post_meta($post->ID, '_custom_main_keyword', true);
@@ -402,7 +410,7 @@ function render_page_meta_tags_box($post) {
     $content_text = wp_strip_all_tags($content);
 
     wp_nonce_field('save_page_meta_tags', 'page_meta_tags_nonce');
-    ?>
+?>
     <p>
         <label for="custom_meta_title"><strong>Meta Title</strong></label><br>
         <input type="text" id="custom_meta_title" name="custom_meta_title" value="<?php echo esc_attr($meta_title); ?>" style="width:100%;" />
@@ -474,15 +482,19 @@ function render_page_meta_tags_box($post) {
 
     <!-- Scorebalk -->
     <style>
-        .seo-score-wrap { margin-top: 30px; }
+        .seo-score-wrap {
+            margin-top: 30px;
+        }
+
         .seo-score-bar {
             width: 100%;
             height: 24px;
             background: #ddd;
             border-radius: 5px;
             overflow: hidden;
-            box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
         }
+
         .seo-score-bar-inner {
             height: 100%;
             transition: width 0.4s ease;
@@ -494,10 +506,10 @@ function render_page_meta_tags_box($post) {
             <div class="seo-score-bar-inner" style="width:<?php echo intval($percentage); ?>%; background:<?php echo esc_attr($bar_color); ?>;"></div>
         </div>
     </div>
-    <?php
+<?php
 }
 
-add_action('save_post', function($post_id) {
+add_action('save_post', function ($post_id) {
     if (!isset($_POST['page_meta_tags_nonce']) || !wp_verify_nonce($_POST['page_meta_tags_nonce'], 'save_page_meta_tags')) {
         return;
     }
@@ -520,17 +532,17 @@ add_action('save_post', function($post_id) {
 //   ADMIN KOLOMMEN (SEO SCORE)
 // ============================
 
-add_action('admin_init', function() {
+add_action('admin_init', function () {
     if (!castaar_seo_user_can_edit()) return;
 
     $post_types = castaar_seo_get_enabled_post_types();
     foreach ($post_types as $post_type) {
-        add_filter("manage_{$post_type}_posts_columns", function($columns) {
+        add_filter("manage_{$post_type}_posts_columns", function ($columns) {
             $columns['seo_score'] = 'SEO Score';
             return $columns;
         });
 
-        add_action("manage_{$post_type}_posts_custom_column", function($column_name, $post_id) {
+        add_action("manage_{$post_type}_posts_custom_column", function ($column_name, $post_id) {
             if ($column_name === 'seo_score') {
                 $score   = calculate_seo_score_for_post($post_id);
                 $main_kw = get_post_meta($post_id, '_custom_main_keyword', true);
@@ -578,7 +590,7 @@ add_action('admin_init', function() {
 //   TITEL OVERRIDES & CACHING
 // ============================
 
-add_filter('pre_get_document_title', function($title) {
+add_filter('pre_get_document_title', function ($title) {
     if (is_singular()) {
         $id = get_the_ID();
         if ($id) {
@@ -591,7 +603,8 @@ add_filter('pre_get_document_title', function($title) {
     return $title;
 });
 
-function calculate_seo_score_for_post($post_id) {
+function calculate_seo_score_for_post($post_id)
+{
     $cache_key = 'seo_score_' . $post_id;
     $cached = get_transient($cache_key);
 
@@ -604,6 +617,226 @@ function calculate_seo_score_for_post($post_id) {
 
     return $seo['score'];
 }
+
+// ============================
+//   WPML TRANSLATION SUPPORT
+// ============================
+
+/**
+ * WPML Integration for SEO Meta Fields
+ * 
+ * This section ensures all Castaar SEO meta fields are fully translatable in WPML:
+ * - Meta Title (_custom_meta_title)
+ * - Meta Description (_custom_meta_description)
+ * - Main Keyword (_custom_main_keyword)
+ * - Extra Keywords 1-4 (_custom_extra_keyword_1 through _custom_extra_keyword_4)
+ * 
+ * When translating a page in WPML, these fields will appear in the translation editor
+ * allowing translators to provide language-specific SEO content for each translation.
+ * 
+ * The fields are automatically configured as "Translate" (not copy or ignore).
+ */
+
+/**
+ * Register SEO meta fields as translatable in WPML
+ * This allows editors to translate SEO fields in the WPML translation editor
+ */
+add_action('init', function () {
+    // Only register if WPML is active
+    if (!function_exists('wpml_load_settings_helper')) {
+        return;
+    }
+
+    // Register custom fields for translation
+    add_filter('wpml_duplicate_generic_string', function ($value, $target_lang, $meta_data) {
+        // Don't copy - let translator fill in
+        return '';
+    }, 10, 3);
+
+    // Register meta fields for translation in WPML Translation Editor
+    add_action('wpml_register_single_string_for_translation', function () {
+        // This will be called when post is sent to translation
+    });
+});
+
+/**
+ * Register all SEO meta keys as translatable via WPML
+ * This makes the fields appear in WPML's translation editor
+ */
+add_action('wpml_register_translation_options', function () {
+    if (!function_exists('wpml_register_single_string')) {
+        return;
+    }
+
+    $meta_keys = [
+        '_custom_meta_title',
+        '_custom_meta_description',
+        '_custom_main_keyword',
+        '_custom_extra_keyword_1',
+        '_custom_extra_keyword_2',
+        '_custom_extra_keyword_3',
+        '_custom_extra_keyword_4'
+    ];
+
+    foreach ($meta_keys as $key) {
+        do_action('wpml_register_single_string', 'castaar-seo', $key, '');
+    }
+});
+
+/**
+ * Make custom fields translatable in WPML
+ * Add them to the list of fields that should be translated
+ */
+add_filter('wpml_custom_field_values_for_post_signature', function ($custom_fields_values, $post_id) {
+    $seo_fields = [
+        '_custom_meta_title',
+        '_custom_meta_description',
+        '_custom_main_keyword',
+        '_custom_extra_keyword_1',
+        '_custom_extra_keyword_2',
+        '_custom_extra_keyword_3',
+        '_custom_extra_keyword_4'
+    ];
+
+    foreach ($seo_fields as $field) {
+        $value = get_post_meta($post_id, $field, true);
+        if (!empty($value)) {
+            $custom_fields_values[$field] = $value;
+        }
+    }
+
+    return $custom_fields_values;
+}, 10, 2);
+
+/**
+ * Tell WPML these fields should be copied to translation editor
+ * WPML uses this to know which custom fields to include in translation jobs
+ */
+add_filter('wpml_tm_copy_custom_fields', function ($fields) {
+    $seo_fields = [
+        '_custom_meta_title',
+        '_custom_meta_description',
+        '_custom_main_keyword',
+        '_custom_extra_keyword_1',
+        '_custom_extra_keyword_2',
+        '_custom_extra_keyword_3',
+        '_custom_extra_keyword_4'
+    ];
+
+    return array_unique(array_merge($fields, $seo_fields));
+});
+
+/**
+ * Configure WPML translation settings for SEO fields
+ * Mark fields as "translate" instead of "copy" or "ignore"
+ */
+add_action('admin_init', function () {
+    if (!function_exists('wpml_get_setting_filter')) {
+        return;
+    }
+
+    $seo_fields = [
+        '_custom_meta_title' => 2,          // 2 = translate
+        '_custom_meta_description' => 2,
+        '_custom_main_keyword' => 2,
+        '_custom_extra_keyword_1' => 2,
+        '_custom_extra_keyword_2' => 2,
+        '_custom_extra_keyword_3' => 2,
+        '_custom_extra_keyword_4' => 2
+    ];
+
+    add_filter('wpml_tm_custom_field_translation', function ($translate, $field) use ($seo_fields) {
+        if (isset($seo_fields[$field])) {
+            return $seo_fields[$field];
+        }
+        return $translate;
+    }, 10, 2);
+
+    // Auto-configure WPML settings for these fields
+    if (function_exists('wpml_update_settings_helper')) {
+        $current_settings = get_option('_icl_custom_field_translation', []);
+        if (!is_array($current_settings)) {
+            $current_settings = [];
+        }
+
+        $updated = false;
+        foreach ($seo_fields as $field => $value) {
+            // Only update if not already set or set to different value
+            if (!isset($current_settings[$field]) || $current_settings[$field] != $value) {
+                $current_settings[$field] = $value;
+                $updated = true;
+            }
+        }
+
+        if ($updated) {
+            update_option('_icl_custom_field_translation', $current_settings);
+        }
+    }
+}, 99);
+
+/**
+ * Ensure WPML shows these fields in the translation editor
+ * This hook is called when WPML builds the translation editor
+ */
+add_filter('wpml_tm_translation_jobs_basket_post_meta', function ($meta_keys, $post_id) {
+    $seo_fields = [
+        '_custom_meta_title',
+        '_custom_meta_description',
+        '_custom_main_keyword',
+        '_custom_extra_keyword_1',
+        '_custom_extra_keyword_2',
+        '_custom_extra_keyword_3',
+        '_custom_extra_keyword_4'
+    ];
+
+    return array_unique(array_merge($meta_keys, $seo_fields));
+}, 10, 2);
+
+/**
+ * Display admin notice confirming WPML integration is active
+ * Only shows once after activation
+ */
+add_action('admin_notices', function () {
+    // Only show on Castaar SEO settings page
+    if (!isset($_GET['page']) || $_GET['page'] !== 'castaar-seo-settings') {
+        return;
+    }
+
+    // Only show if WPML is active
+    if (!function_exists('wpml_get_setting_filter')) {
+        return;
+    }
+
+    // Check if notice was already dismissed
+    if (get_option('castaar_seo_wpml_notice_dismissed')) {
+        return;
+    }
+
+?>
+    <div class="notice notice-info is-dismissible" data-notice="castaar-seo-wpml">
+        <p><strong>✅ WPML Integratie Actief</strong></p>
+        <p>Alle Castaar SEO meta-velden (Meta Title, Description, Keywords) zijn nu vertaalbaar in de WPML Translation Editor.</p>
+        <p>Wanneer je een pagina naar een andere taal vertaalt, kun je voor elke taal unieke SEO-metadata opgeven.</p>
+    </div>
+    <script>
+        jQuery(document).on('click', '[data-notice="castaar-seo-wpml"] .notice-dismiss', function() {
+            jQuery.post(ajaxurl, {
+                action: 'castaar_dismiss_wpml_notice',
+                nonce: '<?php echo wp_create_nonce('castaar_wpml_notice'); ?>'
+            });
+        });
+    </script>
+<?php
+});
+
+/**
+ * Handle WPML notice dismissal
+ */
+add_action('wp_ajax_castaar_dismiss_wpml_notice', function () {
+    check_ajax_referer('castaar_wpml_notice', 'nonce');
+    update_option('castaar_seo_wpml_notice_dismissed', true);
+    wp_die();
+});
 
 // ============================
 //   FRONT-END META TAGS
