@@ -638,159 +638,159 @@ function calculate_seo_score_for_post($post_id)
  */
 
 /**
- * Register SEO meta fields as translatable in WPML
- * This allows editors to translate SEO fields in the WPML translation editor
+ * Get list of all SEO meta fields
+ */
+function castaar_seo_get_meta_fields()
+{
+    return [
+        '_custom_meta_title',
+        '_custom_meta_description',
+        '_custom_main_keyword',
+        '_custom_extra_keyword_1',
+        '_custom_extra_keyword_2',
+        '_custom_extra_keyword_3',
+        '_custom_extra_keyword_4'
+    ];
+}
+
+/**
+ * Register SEO meta fields with WPML on plugin init
+ * This ensures fields are properly configured in WPML's settings
  */
 add_action('init', function () {
-    // Only register if WPML is active
-    if (!function_exists('wpml_load_settings_helper')) {
+    // Only proceed if WPML is active
+    if (!defined('ICL_SITEPRESS_VERSION')) {
         return;
     }
 
-    // Register custom fields for translation
-    add_filter('wpml_duplicate_generic_string', function ($value, $target_lang, $meta_data) {
-        // Don't copy - let translator fill in
-        return '';
-    }, 10, 3);
-
-    // Register meta fields for translation in WPML Translation Editor
-    add_action('wpml_register_single_string_for_translation', function () {
-        // This will be called when post is sent to translation
-    });
-});
-
-/**
- * Register all SEO meta keys as translatable via WPML
- * This makes the fields appear in WPML's translation editor
- */
-add_action('wpml_register_translation_options', function () {
-    if (!function_exists('wpml_register_single_string')) {
-        return;
+    // Get current WPML custom field settings
+    $custom_fields_translation = get_option('_icl_custom_field_translation', []);
+    if (!is_array($custom_fields_translation)) {
+        $custom_fields_translation = [];
     }
 
-    $meta_keys = [
-        '_custom_meta_title',
-        '_custom_meta_description',
-        '_custom_main_keyword',
-        '_custom_extra_keyword_1',
-        '_custom_extra_keyword_2',
-        '_custom_extra_keyword_3',
-        '_custom_extra_keyword_4'
-    ];
-
-    foreach ($meta_keys as $key) {
-        do_action('wpml_register_single_string', 'castaar-seo', $key, '');
-    }
-});
-
-/**
- * Make custom fields translatable in WPML
- * Add them to the list of fields that should be translated
- */
-add_filter('wpml_custom_field_values_for_post_signature', function ($custom_fields_values, $post_id) {
-    $seo_fields = [
-        '_custom_meta_title',
-        '_custom_meta_description',
-        '_custom_main_keyword',
-        '_custom_extra_keyword_1',
-        '_custom_extra_keyword_2',
-        '_custom_extra_keyword_3',
-        '_custom_extra_keyword_4'
-    ];
+    $updated = false;
+    $seo_fields = castaar_seo_get_meta_fields();
 
     foreach ($seo_fields as $field) {
-        $value = get_post_meta($post_id, $field, true);
-        if (!empty($value)) {
-            $custom_fields_values[$field] = $value;
+        // 2 = translate, 1 = copy, 0 = don't translate
+        if (!isset($custom_fields_translation[$field]) || $custom_fields_translation[$field] != 2) {
+            $custom_fields_translation[$field] = 2;
+            $updated = true;
         }
     }
 
-    return $custom_fields_values;
+    // Save updated settings
+    if ($updated) {
+        update_option('_icl_custom_field_translation', $custom_fields_translation);
+
+        // Clear WPML cache to ensure changes take effect
+        if (function_exists('wpml_flush_cache')) {
+            wpml_flush_cache();
+        }
+    }
+}, 1);
+
+/**
+ * Make custom fields translatable via WPML filter
+ * This ensures WPML recognizes these fields for translation
+ */
+add_filter('wpml_tm_custom_field_translation', function ($translate, $field_name) {
+    $seo_fields = castaar_seo_get_meta_fields();
+
+    if (in_array($field_name, $seo_fields)) {
+        return 2; // 2 = translate
+    }
+
+    return $translate;
 }, 10, 2);
 
 /**
- * Tell WPML these fields should be copied to translation editor
- * WPML uses this to know which custom fields to include in translation jobs
+ * Include SEO fields in translation jobs
+ * This ensures fields appear in the translation editor
  */
 add_filter('wpml_tm_copy_custom_fields', function ($fields) {
-    $seo_fields = [
-        '_custom_meta_title',
-        '_custom_meta_description',
-        '_custom_main_keyword',
-        '_custom_extra_keyword_1',
-        '_custom_extra_keyword_2',
-        '_custom_extra_keyword_3',
-        '_custom_extra_keyword_4'
-    ];
-
-    return array_unique(array_merge($fields, $seo_fields));
-});
+    return array_unique(array_merge($fields, castaar_seo_get_meta_fields()));
+}, 10, 1);
 
 /**
- * Configure WPML translation settings for SEO fields
- * Mark fields as "translate" instead of "copy" or "ignore"
+ * Ensure fields are included in translation job basket
  */
-add_action('admin_init', function () {
-    if (!function_exists('wpml_get_setting_filter')) {
-        return;
+add_filter('wpml_tm_translation_job_data', function ($job_data, $job_id) {
+    if (!isset($job_data['custom_fields'])) {
+        $job_data['custom_fields'] = [];
     }
 
-    $seo_fields = [
-        '_custom_meta_title' => 2,          // 2 = translate
-        '_custom_meta_description' => 2,
-        '_custom_main_keyword' => 2,
-        '_custom_extra_keyword_1' => 2,
-        '_custom_extra_keyword_2' => 2,
-        '_custom_extra_keyword_3' => 2,
-        '_custom_extra_keyword_4' => 2
-    ];
+    $seo_fields = castaar_seo_get_meta_fields();
+    $post_id = isset($job_data['original_post_id']) ? $job_data['original_post_id'] : 0;
 
-    add_filter('wpml_tm_custom_field_translation', function ($translate, $field) use ($seo_fields) {
-        if (isset($seo_fields[$field])) {
-            return $seo_fields[$field];
-        }
-        return $translate;
-    }, 10, 2);
-
-    // Auto-configure WPML settings for these fields
-    if (function_exists('wpml_update_settings_helper')) {
-        $current_settings = get_option('_icl_custom_field_translation', []);
-        if (!is_array($current_settings)) {
-            $current_settings = [];
-        }
-
-        $updated = false;
-        foreach ($seo_fields as $field => $value) {
-            // Only update if not already set or set to different value
-            if (!isset($current_settings[$field]) || $current_settings[$field] != $value) {
-                $current_settings[$field] = $value;
-                $updated = true;
+    if ($post_id) {
+        foreach ($seo_fields as $field) {
+            $value = get_post_meta($post_id, $field, true);
+            if (!empty($value) || $value === '0') {
+                $job_data['custom_fields'][$field] = [
+                    'data' => $value,
+                    'format' => 'FIELD',
+                    'translate' => 1
+                ];
             }
         }
-
-        if ($updated) {
-            update_option('_icl_custom_field_translation', $current_settings);
-        }
     }
-}, 99);
+
+    return $job_data;
+}, 10, 2);
 
 /**
- * Ensure WPML shows these fields in the translation editor
- * This hook is called when WPML builds the translation editor
+ * Filter to show custom fields in Advanced Translation Editor (ATE)
  */
-add_filter('wpml_tm_translation_jobs_basket_post_meta', function ($meta_keys, $post_id) {
-    $seo_fields = [
-        '_custom_meta_title',
-        '_custom_meta_description',
-        '_custom_main_keyword',
-        '_custom_extra_keyword_1',
-        '_custom_extra_keyword_2',
-        '_custom_extra_keyword_3',
-        '_custom_extra_keyword_4'
+add_filter('wpml_tm_adjust_translation_fields', function ($fields, $job) {
+    $seo_fields = castaar_seo_get_meta_fields();
+    $post_id = isset($job->original_doc_id) ? $job->original_doc_id : 0;
+
+    if ($post_id) {
+        foreach ($seo_fields as $field) {
+            $value = get_post_meta($post_id, $field, true);
+
+            // Add field to translation if it has a value
+            if (!empty($value) || $value === '0') {
+                $field_key = 'field-' . $field;
+
+                if (!isset($fields[$field_key])) {
+                    $fields[$field_key] = [
+                        'field_type' => 'custom_field',
+                        'field_data' => $value,
+                        'field_data_translated' => '',
+                        'field_finished' => 0,
+                        'field_translate' => 1,
+                        'field_wrap_tag' => '',
+                        'field_style' => '',
+                        'title' => castaar_seo_get_field_label($field)
+                    ];
+                }
+            }
+        }
+    }
+
+    return $fields;
+}, 10, 2);
+
+/**
+ * Get friendly label for field name
+ */
+function castaar_seo_get_field_label($field_name)
+{
+    $labels = [
+        '_custom_meta_title' => 'SEO Meta Title',
+        '_custom_meta_description' => 'SEO Meta Description',
+        '_custom_main_keyword' => 'Main SEO Keyword',
+        '_custom_extra_keyword_1' => 'Extra SEO Keyword 1',
+        '_custom_extra_keyword_2' => 'Extra SEO Keyword 2',
+        '_custom_extra_keyword_3' => 'Extra SEO Keyword 3',
+        '_custom_extra_keyword_4' => 'Extra SEO Keyword 4'
     ];
 
-    return array_unique(array_merge($meta_keys, $seo_fields));
-}, 10, 2);
+    return isset($labels[$field_name]) ? $labels[$field_name] : $field_name;
+}
 
 /**
  * Display admin notice confirming WPML integration is active
