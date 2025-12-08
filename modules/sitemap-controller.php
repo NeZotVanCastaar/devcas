@@ -69,7 +69,7 @@ function render_sitemap_settings_page()
                     <td>
                         <select name="custom_sitemap_order" id="custom_sitemap_order">
                             <option value="DESC" <?php selected($order, 'DESC'); ?>>DESC (nieuwste eerst)</option>
-                            <option value="ASC"  <?php selected($order, 'ASC');  ?>>ASC (oudste/eerst alfabetisch)</option>
+                            <option value="ASC" <?php selected($order, 'ASC');  ?>>ASC (oudste/eerst alfabetisch)</option>
                         </select>
                     </td>
                 </tr>
@@ -229,6 +229,9 @@ add_action('wp_head', function () {
 
 add_action('wp_head', function () {
     if (!is_page() && !is_singular()) return;
+
+    // Skip breadcrumbs on homepage - not needed
+    if (is_front_page()) return;
 
     $items = [[
         '@type'    => 'ListItem',
