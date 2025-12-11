@@ -2,8 +2,8 @@
 defined('ABSPATH') || exit;
 
 // Verberg conceptpagina's uit het WP menu (alleen published)
-add_filter('wp_get_nav_menu_items', function($items) {
-    return array_values(array_filter((array)$items, function($item) {
+add_filter('wp_get_nav_menu_items', function ($items) {
+    return array_values(array_filter((array)$items, function ($item) {
         if (!is_object($item)) return false;
         $status = get_post_status((int)$item->object_id);
         return $status !== 'draft';
@@ -11,7 +11,7 @@ add_filter('wp_get_nav_menu_items', function($items) {
 });
 
 // Voeg meta box toe om hoofdpagina te selecteren (voor het juiste CPT)
-add_action('add_meta_boxes', function() {
+add_action('add_meta_boxes', function () {
     add_meta_box(
         'cpt_head_page',
         'Koppel hoofdpagina',
@@ -22,7 +22,8 @@ add_action('add_meta_boxes', function() {
     );
 });
 
-function render_cpt_head_page_box($post) {
+function render_cpt_head_page_box($post)
+{
     // Cap check + nonce
     if (!current_user_can('edit_post', $post->ID)) {
         echo '<p>Geen toegang.</p>';
@@ -43,7 +44,7 @@ function render_cpt_head_page_box($post) {
 }
 
 // Opslaan gekoppelde hoofdpagina (met nonce)
-add_action('save_post', function($post_id) {
+add_action('save_post', function ($post_id) {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
     if (wp_is_post_revision($post_id)) return;
 
@@ -55,7 +56,7 @@ add_action('save_post', function($post_id) {
 });
 
 // Menu-item actief maken als gekoppelde hoofdpagina actief is
-add_filter('nav_menu_css_class', function($classes, $item) {
+add_filter('nav_menu_css_class', function ($classes, $item) {
     if (!is_singular('your_cpt_slug')) return $classes;
 
     $linked = get_post_meta(get_the_ID(), '_linked_head_page', true);
@@ -66,7 +67,7 @@ add_filter('nav_menu_css_class', function($classes, $item) {
 }, 10, 2);
 
 // CSS laden (fix pad)
-add_action('wp_enqueue_scripts', function() {
+add_action('wp_enqueue_scripts', function () {
     wp_enqueue_style('devcas-default-style', plugins_url('assets/style.css', __FILE__), [], null);
 });
 
@@ -74,8 +75,9 @@ add_action('wp_enqueue_scripts', function() {
 add_filter('post_row_actions', 'devcas_duplicate_link', 10, 2);
 add_filter('page_row_actions', 'devcas_duplicate_link', 10, 2);
 
-function devcas_duplicate_link($actions, $post) {
-    if (current_user_can('edit_post', $post->ID) && in_array($post->post_status, ['publish','private','pending','draft'], true)) {
+function devcas_duplicate_link($actions, $post)
+{
+    if (current_user_can('edit_post', $post->ID) && in_array($post->post_status, ['publish', 'private', 'pending', 'draft'], true)) {
         $url = wp_nonce_url(
             admin_url('admin.php?action=devcas_duplicate_post&post=' . $post->ID),
             basename(__FILE__),
@@ -156,7 +158,7 @@ add_action('admin_action_devcas_duplicate_post', function () {
                     'meta_key'   => $row['meta_key'],
                     'meta_value' => $row['meta_value'],
                 ],
-                ['%d','%s','%s']
+                ['%d', '%s', '%s']
             );
         }
     }
@@ -172,10 +174,16 @@ add_action('admin_action_devcas_duplicate_post', function () {
 
     // 6) Elementor CSS regenereren
     if (class_exists('\Elementor\Core\Files\CSS\Post')) {
-        try { \Elementor\Core\Files\CSS\Post::create($new_post_id)->update(); } catch (\Throwable $e) {}
+        try {
+            \Elementor\Core\Files\CSS\Post::create($new_post_id)->update();
+        } catch (\Throwable $e) {
+        }
     }
     if (class_exists('\Elementor\Plugin')) {
-        try { \Elementor\Plugin::$instance->files_manager->clear_cache(); } catch (\Throwable $e) {}
+        try {
+            \Elementor\Plugin::$instance->files_manager->clear_cache();
+        } catch (\Throwable $e) {
+        }
     }
 
     // 7) Naar de editor van de nieuwe kopie
@@ -184,13 +192,13 @@ add_action('admin_action_devcas_duplicate_post', function () {
 });
 
 // SVG's toelaten in mediabibliotheek
-add_filter('upload_mimes', function($mimes) {
+add_filter('upload_mimes', function ($mimes) {
     $mimes['svg'] = 'image/svg+xml';
     return $mimes;
 });
 
 // SVG veilig tonen in media weergave
-add_filter('wp_check_filetype_and_ext', function($data, $file, $filename, $mimes) {
+add_filter('wp_check_filetype_and_ext', function ($data, $file, $filename, $mimes) {
     $ext = pathinfo($filename, PATHINFO_EXTENSION);
     if (strtolower($ext) === 'svg') {
         $data['ext']  = 'svg';
@@ -198,22 +206,6 @@ add_filter('wp_check_filetype_and_ext', function($data, $file, $filename, $mimes
     }
     return $data;
 }, 10, 4);
-
-// AOS scripts en styles laden
-add_action('wp_enqueue_scripts', function() {
-    // CSS eerst
-    wp_enqueue_style('aos-css', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css', [], '2.3.4');
-
-    // JS met handle zodat we inline script erna kunnen injecteren
-    wp_enqueue_script('aos-js', 'https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.js', [], '2.3.4', true);
-
-    // Voeg AOS.init toe nadat het script geladen is
-    wp_add_inline_script('aos-js', 'document.addEventListener("DOMContentLoaded", function() {
-        AOS.init({
-     	offset: -100
-        });
-    });');
-});
 
 /**
  * Remove "-scaled" from image filenames while keeping scaling active
@@ -223,13 +215,15 @@ add_filter('wp_unique_filename', function ($filename, $ext, $dir) {
 }, 10, 3);
 
 // [year] shortcode
-function shortcode_year() {
+function shortcode_year()
+{
     return '<span class="shortcode-year">' . date('Y') . '</span>';
 }
 add_shortcode('year', 'shortcode_year');
 
 // In admin-lijsten standaard enkel 'publish' tonen (🔒 alleen voor admins)
-function show_only_published_everywhere_in_admin($query) {
+function show_only_published_everywhere_in_admin($query)
+{
     if (
         is_admin() &&
         $query->is_main_query() &&
