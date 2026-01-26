@@ -68,7 +68,7 @@ add_filter('nav_menu_css_class', function ($classes, $item) {
 
 // CSS laden (fix pad)
 add_action('wp_enqueue_scripts', function () {
-    wp_enqueue_style('devcas-default-style', plugins_url('assets/style.css', __FILE__), [], null);
+    wp_enqueue_style('devcas-default-style', plugins_url('../assets/style.css', __FILE__), [], null);
 });
 
 // "Dupliceren" link in de lijstacties (Posts & Pagina's)
