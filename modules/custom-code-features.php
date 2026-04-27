@@ -2,13 +2,13 @@
 defined('ABSPATH') || exit;
 
 // Verberg conceptpagina's uit het WP menu (alleen published)
-// add_filter('wp_get_nav_menu_items', function ($items) {
-//     return array_values(array_filter((array)$items, function ($item) {
-//         if (!is_object($item)) return false;
-//         $status = get_post_status((int)$item->object_id);
-//         return $status !== 'draft';
-//     }));
-// });
+add_filter('wp_get_nav_menu_items', function ($items) {
+    return array_values(array_filter((array)$items, function ($item) {
+        if (!is_object($item)) return false;
+        $status = get_post_status((int)$item->object_id);
+        return $status !== 'draft';
+    }));
+});
 
 // Voeg meta box toe om hoofdpagina te selecteren (voor het juiste CPT)
 add_action('add_meta_boxes', function () {
@@ -222,16 +222,16 @@ function shortcode_year()
 add_shortcode('year', 'shortcode_year');
 
 // In admin-lijsten standaard enkel 'publish' tonen (🔒 alleen voor admins)
-function show_only_published_everywhere_in_admin($query)
-{
-    if (
-        is_admin() &&
-        $query->is_main_query() &&
-        !isset($_GET['post_status']) &&
-        $query->get('post_type') &&
-        current_user_can('manage_options') // gate: enkel admins
-    ) {
-        $query->set('post_status', 'publish');
-    }
-}
-add_action('pre_get_posts', 'show_only_published_everywhere_in_admin');
+// function show_only_published_everywhere_in_admin($query)
+// {
+//     if (
+//         is_admin() &&
+//         $query->is_main_query() &&
+//         !isset($_GET['post_status']) &&
+//         $query->get('post_type') &&
+//         current_user_can('manage_options') // gate: enkel admins
+//     ) {
+//         $query->set('post_status', 'publish');
+//     }
+// }
+// add_action('pre_get_posts', 'show_only_published_everywhere_in_admin');
