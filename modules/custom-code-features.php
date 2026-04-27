@@ -2,13 +2,13 @@
 defined('ABSPATH') || exit;
 
 // Verberg conceptpagina's uit het WP menu (alleen published)
-add_filter('wp_get_nav_menu_items', function ($items) {
-    return array_values(array_filter((array)$items, function ($item) {
-        if (!is_object($item)) return false;
-        $status = get_post_status((int)$item->object_id);
-        return $status !== 'draft';
-    }));
-});
+// add_filter('wp_get_nav_menu_items', function ($items) {
+//     return array_values(array_filter((array)$items, function ($item) {
+//         if (!is_object($item)) return false;
+//         $status = get_post_status((int)$item->object_id);
+//         return $status !== 'draft';
+//     }));
+// });
 
 // Voeg meta box toe om hoofdpagina te selecteren (voor het juiste CPT)
 add_action('add_meta_boxes', function () {
